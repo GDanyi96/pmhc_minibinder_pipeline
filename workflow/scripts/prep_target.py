@@ -31,10 +31,26 @@ from Bio.PDB.Structure import Structure
 from pydantic import BaseModel, Field
 
 THREE_TO_ONE: dict[str, str] = {
-    "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C",
-    "GLN": "Q", "GLU": "E", "GLY": "G", "HIS": "H", "ILE": "I",
-    "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F", "PRO": "P",
-    "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
+    "ALA": "A",
+    "ARG": "R",
+    "ASN": "N",
+    "ASP": "D",
+    "CYS": "C",
+    "GLN": "Q",
+    "GLU": "E",
+    "GLY": "G",
+    "HIS": "H",
+    "ILE": "I",
+    "LEU": "L",
+    "LYS": "K",
+    "MET": "M",
+    "PHE": "F",
+    "PRO": "P",
+    "SER": "S",
+    "THR": "T",
+    "TRP": "W",
+    "TYR": "Y",
+    "VAL": "V",
 }
 
 HC_LENGTH_RANGE = (260, 290)
@@ -266,8 +282,12 @@ def _resolve_hotspots(
             raise ValueError(f"hotspot {token}: chain {chain_id} absent from cleaned PDB")
         chain = model[chain_id]
         if (" ", resnum_clean, " ") not in chain:
-            raise ValueError(f"hotspot {token}: residue {resnum_clean} absent from chain {chain_id}")
-        rcsb = pep_clean_to_rcsb.get(resnum_clean, resnum_clean) if chain_id == "C" else resnum_clean
+            raise ValueError(
+                f"hotspot {token}: residue {resnum_clean} absent from chain {chain_id}"
+            )
+        rcsb = (
+            pep_clean_to_rcsb.get(resnum_clean, resnum_clean) if chain_id == "C" else resnum_clean
+        )
         resolved.append(
             ResolvedHotspot(
                 token=token, chain=chain_id, resnum_clean=resnum_clean, resnum_rcsb=rcsb
