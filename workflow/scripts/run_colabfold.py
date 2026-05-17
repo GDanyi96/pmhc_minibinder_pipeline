@@ -1,11 +1,12 @@
 """Stage 2b — ColabFold (AF2-multimer) wrapper.
 
-Real mode: shells out to the Docker image `colabfold/colabfold:1.5.5-cuda12.2.2`
-with `--num-recycle 6 --model-type alphafold2_multimer_v3 --use-gpu-relax`
-per MARES_IOANNIDIS_2025.
+Real mode: shells out to `colabfold_batch` (installed via the `colabfold`
+optional extra) with `--num-recycle 6 --model-type alphafold2_multimer_v3
+--use-gpu-relax` per MARES_IOANNIDIS_2025. The RunPod pod IS the container
+(no DinD); colabfold-batch runs natively in the pod's Python env.
 
 Mock mode: copies pre-baked fixtures from `tests/fixtures/stage2/controls_colabfold/`
-into per-id subdirectories of `--out-dir`. No Docker, no GPU.
+into per-id subdirectories of `--out-dir`. No GPU.
 
 FASTA contract: one entry per id, header `>{id}`, body
 `<HC>:<beta2m>:<peptide>:<binder>` (colon-separated multimer). Chain order
@@ -20,7 +21,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-DOCKER_IMAGE = "colabfold/colabfold:1.5.5-cuda12.2.2"
 DEFAULT_NUM_RECYCLES = 6
 FIXTURES_DIR = Path("tests/fixtures/stage2/controls_colabfold")
 
@@ -55,13 +55,6 @@ def run_mock(fasta_dir: Path, out_dir: Path, fixtures: Path = FIXTURES_DIR) -> N
 def run_real(fasta_dir: Path, out_dir: Path, num_recycles: int) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "docker",
-        "run",
-        "--gpus",
-        "all",
-        "-v",
-        "/workspace:/workspace",
-        DOCKER_IMAGE,
         "colabfold_batch",
         "--num-recycle",
         str(num_recycles),

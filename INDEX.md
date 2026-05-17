@@ -9,7 +9,8 @@ One-line description per tracked file. New file? Add a line here.
 - `INDEX.md` — This file.
 - `README.md` — Portfolio-facing project overview.
 - `LICENSE` — MIT.
-- `bootstrap.sh` — One-command RunPod setup (deps, Docker images, model weights, smoke test).
+- `bootstrap.sh` — One-command RunPod setup (deps, model weights, ProteinMPNN clone, smoke test).
+- `PIPELINE_STATUS.md` — Live per-stage status, CI/real-run state, locked architectural decisions.
 - `pyproject.toml` — `uv`-managed Python project + pinned minimal deps.
 - `Snakefile` — Top-level pipeline DAG; includes all `workflow/rules/*.smk`.
 - `.gitignore` — Python + project-specific exclusions (CLAUDE.local.md, settings.local.json, results/).
@@ -27,7 +28,7 @@ One-line description per tracked file. New file? Add a line here.
 ## specs/
 
 - `specs/stage0_target_specification.md` — Target + off-target panel definition, PDB cleaning, hotspot selection.
-- `specs/stage1_rfdiffusion.md` — Backbone generation via RFdiffusion (Docker, partial diffusion).
+- `specs/stage1_rfdiffusion.md` — Backbone generation via RFdiffusion (native install, partial diffusion).
 - `specs/stage2_proteinmpnn_af2.md` — Sequence design + AF2-multimer validation + controls panel.
 - `specs/stage3_crosspan.md` — In silico cross-reactivity panning against off-target peptide grid.
 - `specs/stage4_diversity.md` — ESM-2 embeddings + farthest-point sampling diversity selection.
@@ -52,7 +53,7 @@ One-line description per tracked file. New file? Add a line here.
 - `workflow/scripts/prep_target.py` — Stage 0 entry point.
 - `workflow/scripts/run_rfdiffusion.py` — Stage 1 entry point.
 - `workflow/scripts/run_proteinmpnn.py` — Stage 2a: ProteinMPNN complex-mode wrapper.
-- `workflow/scripts/run_colabfold.py` — Stage 2b: ColabFold (AF2-multimer) Docker wrapper.
+- `workflow/scripts/run_colabfold.py` — Stage 2b: ColabFold (AF2-multimer) native wrapper.
 - `workflow/scripts/compute_metrics.py` — Stage 2c: iPAE / ipLDDT / BSA computation.
 - `workflow/scripts/crosspan.py` — Stage 3 entry point.
 - `workflow/scripts/embed_designs.py` — Stage 4 entry point.
@@ -77,11 +78,6 @@ One-line description per tracked file. New file? Add a line here.
 
 - `data/targets/.gitkeep` — PDB files land here (downloaded by bootstrap.sh).
 - `data/controls/controls_manifest.yaml` — P1, P2, P3, N1, N2 control definitions.
-
-## docker/
-
-- `docker/rfdiffusion.Dockerfile` — Thin recipe over `rosettacommons/rfdiffusion`.
-- `docker/colabfold.Dockerfile` — Thin recipe over `colabfold/colabfold`.
 
 ## tests/
 

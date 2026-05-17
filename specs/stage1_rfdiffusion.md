@@ -23,7 +23,8 @@ backbone PDBs, ready for sequence design in stage 2.
 
 ## Tools
 
-- RFdiffusion via Docker image `rosettacommons/rfdiffusion:latest`.
+- RFdiffusion installed natively on the pod (no DinD); upstream
+  `rosettacommons/RFdiffusion` repo cloned by `bootstrap.sh`.
 - Model weights: `/workspace/models/rfdiffusion/Complex_base_ckpt.pt`
   (downloaded by `bootstrap.sh`).
 - Snakemake checkpoint to fan out per-design downstream steps.

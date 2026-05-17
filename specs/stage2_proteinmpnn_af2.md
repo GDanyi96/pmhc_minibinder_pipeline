@@ -28,10 +28,12 @@ This stage has three sub-rules: `02_proteinmpnn`, `03_colabfold`, `04_metrics`.
 
 ## Tools
 
-- ProteinMPNN via Docker (or `pip install proteinmpnn` if available).
+- ProteinMPNN: upstream `dauparas/ProteinMPNN` cloned natively on the pod
+  (no DinD); invoked via `python $PROTEINMPNN_DIR/protein_mpnn_run.py …`.
   Complex mode: `--fix_chains "A B C"` (only chain D = binder is designed).
-- ColabFold (`colabfold/colabfold:1.5.5-cuda12.2.2`) with remote MMseqs2 MSA.
-  AF2-multimer preset, `num_recycles=6`.
+- ColabFold installed natively via the `colabfold` optional extra
+  (`colabfold_batch` CLI); remote MMseqs2 MSA. AF2-multimer preset,
+  `num_recycles=6`.
 - `pandas` / `pyarrow` for parquet output.
 
 ## Anchored references

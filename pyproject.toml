@@ -25,10 +25,23 @@ dev = [
     "pytest>=8.0",
     "types-PyYAML",
 ]
+colabfold = [
+    "colabfold[alphafold-minus-jax] @ git+https://github.com/sokrypton/ColabFold",
+]
+proteinmpnn = [
+    "torch>=2.1",
+    "numpy>=1.26",
+]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+# Required for the `colabfold` optional extra, which pins
+# colabfold[alphafold-minus-jax] via a git URL (no PyPI release of the
+# sokrypton fork with the alphafold-minus-jax extra).
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["workflow"]

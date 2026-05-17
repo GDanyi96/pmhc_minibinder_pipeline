@@ -16,10 +16,11 @@ overrides, read `CLAUDE.local.md` (gitignored).
 | Primary target         | WT1 RMFPNAPYL / HLA-A\*02:01 (PDB **3HPJ**)            |
 | Positive control       | Jenkins NY1-B04 vs SLLMWITQC / HLA-A\*02:01 (PDB 2BNR) |
 | GPU                    | NVIDIA A100 SXM 80GB (RunPod)                          |
+| Execution model        | **Native install on RunPod pod; the pod IS the container, no DinD** |
 | Orchestrator           | Snakemake 8.x                                          |
-| Backbone gen           | RFdiffusion (`rosettacommons/rfdiffusion`)             |
-| Sequence design        | ProteinMPNN complex mode, T=0.1, fix MHC chains        |
-| Structure prediction   | ColabFold (AF2-multimer, remote MMseqs2 MSA)           |
+| Backbone gen           | RFdiffusion (native install on pod)                    |
+| Sequence design        | ProteinMPNN complex mode, T=0.1, fix MHC chains (native; upstream `dauparas/ProteinMPNN` clone) |
+| Structure prediction   | ColabFold (native install, AF2-multimer, remote MMseqs2 MSA) |
 | Sequence embeddings    | ESM-2 650M, mean-pool over binder residues             |
 | Surrogate              | LightGBM + GP baseline                                 |
 | Diversity selection    | Farthest Point Sampling (FPS)                          |

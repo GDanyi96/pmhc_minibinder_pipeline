@@ -31,14 +31,32 @@ uv --version
 
 # ─── 3. Python deps ────────────────────────────────────────────
 echo
-echo "[3/7] Installing Python deps via uv..."
-uv sync --extra dev
+echo "[3/7] Installing Python deps via uv (all extras: dev + colabfold + proteinmpnn)..."
+uv sync --all-extras
 
-# ─── 4. Docker images (real downloads — uncomment when ready) ──
+# ─── 4. Native tool installs (no Docker — the pod IS the container) ─
 echo
-echo "[4/7] Pulling Docker images..."
-echo "TODO: docker pull rosettacommons/rfdiffusion:latest"
-echo "TODO: docker pull colabfold/colabfold:1.5.5-cuda12.2.2"
+echo "[4/7] Setting up native tool installs..."
+echo "  The pod runs all heavy tools natively (no Docker-in-Docker)."
+echo "  ColabFold (colabfold_batch CLI) was installed via the 'colabfold' extra in step 3."
+
+# ProteinMPNN ships as a git repo, not a pip wheel. Clone (or update) under
+# /workspace so run_proteinmpnn.py's default PROTEINMPNN_DIR resolves.
+PROTEINMPNN_DIR="${PROTEINMPNN_DIR:-/workspace/ProteinMPNN}"
+if [ -d "$PROTEINMPNN_DIR/.git" ]; then
+  echo "  ProteinMPNN already cloned at $PROTEINMPNN_DIR — pulling latest..."
+  git -C "$PROTEINMPNN_DIR" pull --ff-only
+else
+  echo "  Cloning ProteinMPNN to $PROTEINMPNN_DIR..."
+  git clone https://github.com/dauparas/ProteinMPNN "$PROTEINMPNN_DIR"
+fi
+
+# Sanity: colabfold_batch must be on PATH after the colabfold extra install.
+if uv run colabfold_batch --help >/dev/null 2>&1; then
+  echo "  colabfold_batch: OK"
+else
+  echo "  WARN: colabfold_batch --help failed; check the colabfold extra install."
+fi
 
 # ─── 5. Model weights ──────────────────────────────────────────
 echo

@@ -1,9 +1,11 @@
 # mypy: disable-error-code="no-untyped-call,attr-defined,no-any-return,misc"
 """Stage 2a — ProteinMPNN complex-mode wrapper.
 
-Real mode: invokes the ProteinMPNN entry point with `--sampling_temp 0.1`
-(HADRUP_JENKINS_2025) and `--num_seq_per_target 10`. Chain A+B+C
-(HC, beta2m, peptide) are fixed; chain D is designed.
+Real mode: invokes `python $PROTEINMPNN_DIR/protein_mpnn_run.py …` natively
+(the upstream dauparas/ProteinMPNN script, cloned by bootstrap.sh into
+`/workspace/ProteinMPNN`). The RunPod pod IS the container — no DinD.
+Args: `--sampling_temp 0.1` (HADRUP_JENKINS_2025), `--num_seq_per_target 10`.
+Chain A+B+C (HC, beta2m, peptide) are fixed; chain D is designed.
 
 Mock mode: copies `tests/fixtures/proteinmpnn/sample.fasta` to
 `<out_folder>/<pdb_stem>.fasta`. No GPU.
@@ -16,6 +18,7 @@ Pitfall #7 in specs/stage2_proteinmpnn_af2.md.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -23,7 +26,7 @@ from pathlib import Path
 
 from Bio.PDB import PDBParser
 
-PROTEINMPNN_DOCKER = "proteinmpnn:latest"
+PROTEINMPNN_DIR = Path(os.environ.get("PROTEINMPNN_DIR", "/workspace/ProteinMPNN"))
 SAMPLE_FIXTURE = Path("tests/fixtures/proteinmpnn/sample.fasta")
 DEFAULT_TEMP = 0.1
 DEFAULT_NUM_SEQ = 10
@@ -58,14 +61,8 @@ def run_real(
 ) -> None:
     out_folder.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "docker",
-        "run",
-        "--gpus",
-        "all",
-        "-v",
-        "/workspace:/workspace",
-        PROTEINMPNN_DOCKER,
-        "protein_mpnn_run.py",
+        sys.executable,
+        str(PROTEINMPNN_DIR / "protein_mpnn_run.py"),
         "--pdb_path",
         str(pdb_path),
         "--chain_id_jsonl",

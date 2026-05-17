@@ -31,7 +31,7 @@ All stages are orchestrated by Snakemake; thresholds live in
 ## Quick start (on a GPU pod with `/workspace/pipeline/` checkout)
 
 ```bash
-bash bootstrap.sh                              # installs deps, pulls Docker images, downloads weights
+bash bootstrap.sh                              # installs deps, clones ProteinMPNN, downloads weights
 snakemake --dry-run --config mock=true -j1     # validates the DAG (no GPU needed)
 snakemake --cores all                          # real cycle-1 run (A100 recommended)
 ```
