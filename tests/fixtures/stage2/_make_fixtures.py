@@ -5,10 +5,23 @@ Run from the repo root:
 
 For each control the JSON encodes a 2-D PAE matrix sized to its chain
 concatenation length (A=HC, B=beta2m, C=peptide, D=binder). Within a chain
-the PAE is 0.5; the binder<->pMHC submatrix carries a tuned value so that
-iPAE comes out close to the target (P1=5.0, P2=6.5, P3=9.0, N1=17.0,
-N2=22.0). pLDDT is uniformly 95.0. ptm/iptm are written but unused by our
-code (pitfall #2).
+the PAE is 0.5; the binder<->pMHC submatrix carries a tuned value so iPAE
+comes out close to the target.
+
+Targets match cycle-1 pod observations (avoid mock-vs-real divergence):
+P1 iPAE 5.0 / ipLDDT 95.0  (real: 4.88 / 94.5)
+P2 iPAE 6.5 / ipLDDT 95.0  (real: 4.56 / 95.9; Jenkins published ~6.5)
+P3 iPAE 4.5 / ipLDDT 95.0  (real: 4.54 / 94.2; ~ P1 -- AF2 blind spot)
+N1 iPAE 25.0 / ipLDDT 35.0 (real: 24.72 / 34.5)
+N2 iPAE 27.0 / ipLDDT 35.0 (real: 25.70 / 31.4)
+
+These values exercise the commit-5 halt rule (positives <-> negatives
+iPAE gap > 10 Ang and ipLDDT gap > 30) at realistic separation, so the
+mock catches regressions that would matter on real data.
+
+JSON key is "pae" (ColabFold >=1.6.0). compute_metrics.load_pae also
+accepts the legacy "predicted_aligned_error" key. ptm/iptm are written
+but unused by our code (pitfall #2).
 
 Reproducible: no randomness, idempotent on rerun.
 """
@@ -21,11 +34,11 @@ from pathlib import Path
 FIXTURE_DIR = Path(__file__).resolve().parent / "controls_colabfold"
 
 CONTROLS = {
-    "P1": {"hc": 275, "b2m": 100, "pep": 9, "binder": 85, "ipae_target": 5.0},
-    "P2": {"hc": 276, "b2m": 100, "pep": 9, "binder": 145, "ipae_target": 6.5},
-    "P3": {"hc": 275, "b2m": 100, "pep": 10, "binder": 85, "ipae_target": 9.0},
-    "N1": {"hc": 275, "b2m": 100, "pep": 9, "binder": 85, "ipae_target": 17.0},
-    "N2": {"hc": 275, "b2m": 100, "pep": 9, "binder": 85, "ipae_target": 22.0},
+    "P1": {"hc": 275, "b2m": 100, "pep": 9, "binder": 85, "ipae_target": 5.0, "plddt": 95.0},
+    "P2": {"hc": 276, "b2m": 100, "pep": 9, "binder": 145, "ipae_target": 6.5, "plddt": 95.0},
+    "P3": {"hc": 275, "b2m": 100, "pep": 10, "binder": 85, "ipae_target": 4.5, "plddt": 95.0},
+    "N1": {"hc": 275, "b2m": 100, "pep": 9, "binder": 85, "ipae_target": 25.0, "plddt": 35.0},
+    "N2": {"hc": 275, "b2m": 100, "pep": 9, "binder": 85, "ipae_target": 27.0, "plddt": 35.0},
 }
 
 SCORES_TEMPLATE = "{cid}_scores_rank_001_alphafold2_multimer_v3_model_1_seed_000.json"
@@ -87,8 +100,9 @@ def write_fixtures() -> None:
                 pae[j][i] = cross
 
         scores = {
-            "predicted_aligned_error": pae,
-            "plddt": [95.0] * n,
+            # ColabFold >=1.6.0 emits the matrix under "pae".
+            "pae": pae,
+            "plddt": [float(lens["plddt"])] * n,
             "ptm": 0.85,
             "iptm": 0.75,
             "max_pae": cross,

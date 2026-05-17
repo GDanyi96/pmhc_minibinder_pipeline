@@ -60,6 +60,12 @@ stage2:
     temperature: 0.1
     nll_top_fraction: 0.10
   controls:
-    p1_ipae_max: 7.0
-    p2_ipae_tolerance: 2.0
-    p3_delta_min: 3.0
+    # Cycle-1 rule rewrite. The previous "P1 ranks <= 2 of 5" check fired
+    # falsely on real data: P2 has more interface (longer published binder),
+    # and P3 scores ~ P1 due to the AF2-multimer specificity blind spot
+    # (HOUSEHOLDER_GARCIA_2025, MARES_IOANNIDIS_2025). Specificity is
+    # Stage 3 cross-pan's job, not Stage 2 iPAE rank.
+    p1_ipae_max: 7.0                # P1 must bind cognate
+    p2_ipae_tolerance: 2.0          # P2 calibration: 6.5 +/- 2.0 Ang vs Jenkins
+    pos_neg_ipae_gap_min: 10.0      # min(N1,N2) iPAE - max(P1,P2,P3) iPAE
+    pos_neg_iplddt_gap_min: 30.0    # min(P1,P2,P3) ipLDDT - max(N1,N2) ipLDDT

@@ -94,7 +94,8 @@ class ControlEntry(BaseModel):
 class ControlsThresholds(BaseModel):
     p1_ipae_max: float
     p2_ipae_tolerance: float
-    p3_delta_min: float
+    pos_neg_ipae_gap_min: float
+    pos_neg_iplddt_gap_min: float
 
 
 class Stage2Thresholds(BaseModel):
@@ -188,9 +189,21 @@ def enforce_halt_gate(
     metrics: dict[str, dict[str, Any]],
     thresholds: ControlsThresholds,
 ) -> tuple[HaltStatus, str]:
-    p1 = metrics["P1"]["ipae"]
-    p2 = metrics["P2"]["ipae"]
-    p3 = metrics["P3"]["ipae"]
+    """Biology-correct controls halt gate.
+
+    Replaces the cycle-1 "P1 rank <= 2 of 5" rule, which fired falsely on
+    real data: P2 has more interface (longer published binder) and P3 ~ P1
+    due to the AF2-multimer specificity blind spot (HOUSEHOLDER_GARCIA_2025,
+    MARES_IOANNIDIS_2025). Specificity is Stage 3 cross-pan's job.
+
+    Four checks: P1 cognate binding, P2 calibration vs Jenkins published
+    value, positives <-> negatives iPAE gap, positives <-> negatives
+    ipLDDT gap.
+    """
+    p1, p2, p3 = (metrics[k]["ipae"] for k in ("P1", "P2", "P3"))
+    n1, n2 = (metrics[k]["ipae"] for k in ("N1", "N2"))
+    p1l, p2l, p3l = (metrics[k]["iplddt"] for k in ("P1", "P2", "P3"))
+    n1l, n2l = (metrics[k]["iplddt"] for k in ("N1", "N2"))
 
     if p1 > thresholds.p1_ipae_max:
         return "halt", f"HALT: P1 iPAE {p1:.2f} > {thresholds.p1_ipae_max:.1f} Ang threshold"
@@ -202,14 +215,30 @@ def enforce_halt_gate(
             "Check chain ordering and num_recycles."
         )
 
-    all_ipaes = {cid: row["ipae"] for cid, row in metrics.items()}
-    p1_rank = sorted(all_ipaes, key=lambda k: all_ipaes[k]).index("P1") + 1
-    if p1_rank > 2:
-        return "halt", f"HALT: P1 ranks {p1_rank}/5 - scoring pipeline inverted"
+    ipae_gap = min(n1, n2) - max(p1, p2, p3)
+    if ipae_gap < thresholds.pos_neg_ipae_gap_min:
+        return "halt", (
+            f"HALT: positives<->negatives iPAE gap {ipae_gap:.2f} Ang "
+            f"< {thresholds.pos_neg_ipae_gap_min:.1f} Ang "
+            f"(pos max {max(p1, p2, p3):.2f}, neg min {min(n1, n2):.2f})"
+        )
 
-    if p3 <= p1 + thresholds.p3_delta_min:
-        logger.warning("P3 iPAE %.2f not sufficiently above P1 %.2f - specificity weak", p3, p1)
+    iplddt_gap = min(p1l, p2l, p3l) - max(n1l, n2l)
+    if iplddt_gap < thresholds.pos_neg_iplddt_gap_min:
+        return "halt", (
+            f"HALT: positives<->negatives ipLDDT gap {iplddt_gap:.2f} "
+            f"< {thresholds.pos_neg_iplddt_gap_min:.1f} "
+            f"(pos min {min(p1l, p2l, p3l):.2f}, neg max {max(n1l, n2l):.2f})"
+        )
 
+    logger.info(
+        "Stage 2 does not assess specificity - P3 (binder vs non-cognate pMHC) "
+        "iPAE %.2f Ang, P1 (binder vs cognate) iPAE %.2f Ang. AF2-multimer "
+        "specificity blind spot per HOUSEHOLDER_GARCIA_2025, MARES_IOANNIDIS_2025. "
+        "Specificity is assessed in Stage 3 cross-panning, not here.",
+        p3,
+        p1,
+    )
     return "pass", ""
 
 
@@ -281,7 +310,9 @@ def run(
     if status == "halt":
         logger.error(halt_message)
         return 1
-    logger.info("Controls halt gate passed (all 5 controls scored, P1 rank ok).")
+    logger.info(
+        "Controls halt gate passed (P1 cognate, P2 calibration, positives<->negatives gaps)."
+    )
     return 0
 
 
