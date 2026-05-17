@@ -4,6 +4,13 @@
 
 set -euo pipefail
 
+# RunPod base sets LD_LIBRARY_PATH=/usr/local/cuda/lib64 (CUDA 13). JAX
+# cu12 wheels bundle their own CUDA 12 libs; the system override loads
+# mismatched libs into the JAX process → SIGSEGV in cuDNN at first
+# forward pass. Unset for this shell and all child processes (uv run,
+# colabfold_batch subprocess). Empirically reproduced on cycle 1 pod run.
+unset LD_LIBRARY_PATH
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 

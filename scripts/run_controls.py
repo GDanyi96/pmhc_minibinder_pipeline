@@ -15,6 +15,14 @@ Halt rules and thresholds live in configs/thresholds.yaml under stage2.controls.
 
 from __future__ import annotations
 
+import os
+
+# RunPod base sets LD_LIBRARY_PATH=/usr/local/cuda/lib64 (CUDA 13), which
+# overrides JAX's bundled CUDA 12 libs and SIGSEGVs cuDNN. The colabfold
+# subprocess we spawn inherits this process's env, so popping here
+# propagates the unset to the JAX child. See bootstrap.sh.
+os.environ.pop("LD_LIBRARY_PATH", None)
+
 import argparse
 import datetime as dt
 import json
