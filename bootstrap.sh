@@ -1,8 +1,21 @@
 #!/usr/bin/env bash
 # One-command RunPod setup for the pMHC-I minibinder pipeline.
 # Usage (on the pod):  cd /workspace/pipeline && bash bootstrap.sh
+#   --with-rfdiffusion-weights  also fetch Stage 1 weights (defer until Stage 1)
 
 set -euo pipefail
+
+WITH_RFDIFF_WEIGHTS=0
+for arg in "$@"; do
+  case "$arg" in
+    --with-rfdiffusion-weights) WITH_RFDIFF_WEIGHTS=1 ;;
+    -h|--help)
+      sed -n '2,4p' "$0"
+      exit 0
+      ;;
+    *) echo "bootstrap.sh: unknown arg '$arg'" >&2; exit 2 ;;
+  esac
+done
 
 # RunPod base sets LD_LIBRARY_PATH=/usr/local/cuda/lib64 (CUDA 13). JAX
 # cu12 wheels bundle their own CUDA 12 libs; the system override loads
@@ -65,22 +78,51 @@ else
   echo "  WARN: colabfold_batch --help failed; check the colabfold extra install."
 fi
 
-# ─── 5. Model weights ──────────────────────────────────────────
+# ─── 5. Model weights (Stage 1; opt-in) ────────────────────────
 echo
-echo "[5/7] Downloading model weights to /workspace/models/..."
-mkdir -p /workspace/models/rfdiffusion /workspace/models/esm2
-echo "TODO: wget RFdiffusion Complex_base_ckpt.pt → /workspace/models/rfdiffusion/"
-echo "TODO: huggingface-cli download facebook/esm2_t33_650M_UR50D → /workspace/models/esm2/"
-
-# ─── 6. Target PDBs ────────────────────────────────────────────
-echo
-echo "[6/7] Downloading target PDBs..."
-mkdir -p data/targets
-if [ ! -f data/targets/3HPJ.pdb ]; then
-  echo "TODO: wget https://files.rcsb.org/download/3HPJ.pdb -O data/targets/3HPJ.pdb"
+echo "[5/7] Model weights..."
+if [ "$WITH_RFDIFF_WEIGHTS" -eq 1 ]; then
+  mkdir -p /workspace/models/rfdiffusion /workspace/models/esm2
+  rfdiff_ckpt=/workspace/models/rfdiffusion/Complex_base_ckpt.pt
+  if [ -f "$rfdiff_ckpt" ]; then
+    echo "  RFdiffusion Complex_base_ckpt.pt: already present, skipping"
+  else
+    echo "  TODO: wget RFdiffusion Complex_base_ckpt.pt -> $rfdiff_ckpt"
+  fi
+  echo "  TODO: huggingface-cli download facebook/esm2_t33_650M_UR50D -> /workspace/models/esm2/"
+else
+  echo "  Stage 1 / Stage 4 weights skipped (use --with-rfdiffusion-weights to fetch)."
 fi
-if [ ! -f data/targets/2BNR.pdb ]; then
-  echo "TODO: wget https://files.rcsb.org/download/2BNR.pdb -O data/targets/2BNR.pdb"
+
+# ─── 6. Target PDBs (download + clean) ─────────────────────────
+echo
+echo "[6/7] Target PDBs..."
+mkdir -p data/targets
+for pdb in 3HPJ 2BNR; do
+  raw="data/targets/${pdb}.pdb"
+  if [ -f "$raw" ]; then
+    echo "  $pdb: already present, skipping download"
+  else
+    wget -q "https://files.rcsb.org/download/${pdb}.pdb" -O "$raw"
+    echo "  $pdb: downloaded"
+  fi
+done
+
+clean_primary="data/targets/3hpj_clean.pdb"
+clean_control="data/targets/2bnr_clean.pdb"
+target_yaml="data/targets/target.yaml"
+if [ -f "$clean_primary" ] && [ -f "$clean_control" ] && [ -f "$target_yaml" ]; then
+  echo "  cleaned PDBs + target.yaml present, skipping prep_target"
+else
+  echo "  Running prep_target.py..."
+  uv run python workflow/scripts/prep_target.py \
+    --primary-config configs/target_wt1_a0201.yaml \
+    --control-config configs/target_2bnr_a0201.yaml \
+    --primary-pdb-in data/targets/3HPJ.pdb \
+    --control-pdb-in data/targets/2BNR.pdb \
+    --primary-pdb-out "$clean_primary" \
+    --control-pdb-out "$clean_control" \
+    --out "$target_yaml"
 fi
 
 # ─── 7. Smoke test ─────────────────────────────────────────────
@@ -92,5 +134,6 @@ echo
 echo "═══════════════════════════════════════════════════════════"
 echo "READY"
 echo "═══════════════════════════════════════════════════════════"
-echo "Next: replace TODO lines above with real downloads, then:"
-echo "  uv run snakemake --cores all"
+echo "Next:"
+echo "  uv run python scripts/run_controls.py   # Stage 2 controls (~10 min on A100)"
+echo "  uv run snakemake --cores all            # full cycle"

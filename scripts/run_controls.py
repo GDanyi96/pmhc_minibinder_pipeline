@@ -258,6 +258,8 @@ def run(
     cycle: str,
     mock: bool,
     wt1_pdb: Path,
+    skip_colabfold: bool = False,
+    metrics_only: bool = False,
 ) -> int:
     controls = load_manifest(manifest_path)
     thresholds = load_thresholds(thresholds_path)
@@ -265,7 +267,7 @@ def run(
     by_id = {c.id: c for c in controls}
     assert_p1_integrity(by_id["P1"])
 
-    if any(by_id[i].binder_sequence is None for i in ("N1", "N2")):
+    if not metrics_only and any(by_id[i].binder_sequence is None for i in ("N1", "N2")):
         logger.info("Populating N1/N2 via generate_negatives (seed=42)")
         generate_negatives.main(["--config", str(manifest_path)])
         controls = load_manifest(manifest_path)
@@ -274,12 +276,20 @@ def run(
     results_dir = Path(f"results/cycle_{cycle}/stage2")
     fasta_dir = results_dir / "colabfold" / "_controls_fasta"
     colabfold_out = results_dir / "colabfold" / "controls"
-    write_fastas(controls, fasta_dir, wt1_pdb, mock=mock)
+    if not metrics_only:
+        write_fastas(controls, fasta_dir, wt1_pdb, mock=mock)
 
-    cf_argv = ["--fasta-dir", str(fasta_dir), "--out-dir", str(colabfold_out)]
-    if mock:
-        cf_argv.append("--mock")
-    run_colabfold.main(cf_argv)
+    if not (skip_colabfold or metrics_only):
+        cf_argv = ["--fasta-dir", str(fasta_dir), "--out-dir", str(colabfold_out)]
+        if mock:
+            cf_argv.append("--mock")
+        run_colabfold.main(cf_argv)
+    else:
+        logger.info(
+            "Skipping ColabFold (%s); reusing existing outputs under %s",
+            "--metrics-only" if metrics_only else "--skip-colabfold",
+            colabfold_out,
+        )
 
     per_control: dict[str, dict[str, Any]] = {}
     for control in controls:
@@ -323,8 +333,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cycle", default=DEFAULT_CYCLE)
     parser.add_argument("--wt1-pdb", type=Path, default=DEFAULT_WT1_PDB)
     parser.add_argument("--mock", action="store_true")
+    parser.add_argument(
+        "--skip-colabfold",
+        action="store_true",
+        help="Assume ColabFold outputs already exist; skip the subprocess call.",
+    )
+    parser.add_argument(
+        "--metrics-only",
+        action="store_true",
+        help="Skip negatives gen + FASTA writing + ColabFold; recompute metrics+halt only.",
+    )
     args = parser.parse_args(argv)
-    return run(args.config, args.thresholds, args.cycle, args.mock, args.wt1_pdb)
+    return run(
+        args.config,
+        args.thresholds,
+        args.cycle,
+        args.mock,
+        args.wt1_pdb,
+        skip_colabfold=args.skip_colabfold,
+        metrics_only=args.metrics_only,
+    )
 
 
 if __name__ == "__main__":

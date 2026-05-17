@@ -79,6 +79,11 @@ One-line description per tracked file. New file? Add a line here.
 - `data/targets/.gitkeep` — PDB files land here (downloaded by bootstrap.sh).
 - `data/controls/controls_manifest.yaml` — P1, P2, P3, N1, N2 control definitions.
 
+## docs/
+
+- `docs/pod_quickstart.md` — Fresh-pod three-line sequence, debug flags, recovery from failed metrics steps.
+- `docs/known_traps.md` — Empirical gotchas encountered bringing the pipeline up on RunPod (Docker, uv, ColabFold output layout, PAE key, JAX drift, LD_LIBRARY_PATH, AF2 specificity blind spot).
+
 ## tests/
 
 - `tests/__init__.py` — Marks tests as a package.
