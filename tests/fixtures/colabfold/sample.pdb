@@ -1,0 +1,5 @@
+HEADER    MOCK FIXTURE FOR STAGE 2 (ColabFold ranked_0)
+REMARK    Stub AF2-multimer output; minimal CA trace.
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 85.00           C
+ATOM      2  CA  GLY D   1      20.000   0.000   0.000  1.00 90.00           C
+END

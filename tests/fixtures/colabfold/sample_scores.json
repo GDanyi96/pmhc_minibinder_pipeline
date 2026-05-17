@@ -1,0 +1,12 @@
+{
+  "mock": true,
+  "design_id": "design_00000",
+  "ipae": 6.4,
+  "iplddt": 93.1,
+  "plddt_mean": 88.5,
+  "ranking_confidence": 0.91,
+  "pae_min": 1.2,
+  "pae_max": 31.4,
+  "num_recycles": 6,
+  "anchor": "MARES_IOANNIDIS_2025"
+}

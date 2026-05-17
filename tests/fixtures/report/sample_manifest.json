@@ -1,0 +1,14 @@
+{
+  "mock": true,
+  "cycle": "01",
+  "report_path": "reports/cycle_01.md",
+  "figures": [
+    "fig01_pipeline_funnel.png",
+    "fig02_ipae_distribution.png",
+    "fig03_crosspan_heatmap.png",
+    "fig04_diversity_tsne.png",
+    "fig05_al_calibration.png"
+  ],
+  "controls_status": {"P1": "pass", "P2": "pass", "P3": "pass", "N1": "pass", "N2": "pass"},
+  "halt": false
+}

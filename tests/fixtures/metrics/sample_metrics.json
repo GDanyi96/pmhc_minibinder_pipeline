@@ -1,0 +1,15 @@
+{
+  "mock": true,
+  "cycle": "01",
+  "designs": [
+    {"id": "design_00000", "ipae": 6.4, "iplddt": 93.1, "mpnn_nll": 1.234, "passes_filters": true}
+  ],
+  "controls": {
+    "P1": {"ipae": 6.5, "iplddt": 93.0, "rank_pct": 8.0, "passes": true},
+    "P2": {"ipae": 6.6, "iplddt": 92.5, "passes": true},
+    "P3": {"ipae": 10.8, "iplddt": 78.0, "passes": true},
+    "N1": {"ipae": 16.4, "iplddt": 55.0, "passes": true},
+    "N2": {"ipae": 22.1, "iplddt": 45.0, "passes": true}
+  },
+  "halt": false
+}
