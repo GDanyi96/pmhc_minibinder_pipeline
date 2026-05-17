@@ -1,0 +1,53 @@
+[project]
+name = "pmhc-minibinder-pipeline"
+version = "0.0.1"
+description = "De novo pMHC-I minibinder design pipeline for CAR-T specificity"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+authors = [{ name = "GDanyi96" }]
+
+# Minimal kickoff deps. Heavy ML deps (torch, biopython, esm, lightgbm,
+# colabfold-batch, etc.) are added per-stage as their specs land.
+dependencies = [
+    "snakemake>=8.0,<9.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4",
+    "black>=24.0",
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "types-PyYAML",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["workflow"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+files = ["workflow/scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,48 @@
+# All numerical filter thresholds for the pipeline.
+# Anchored to HADRUP_JENKINS_2025 (AF2 cuts) and MARES_IOANNIDIS_2025 (recycles).
+# No magic numbers in code — load from here.
+
+af2:
+  num_recycles: 6
+  multimer_preset: multimer
+  # Cycle 1 (loose) vs Final (post partial-diffusion) cuts
+  ipae:
+    cycle1_max: 12.0
+    final_max: 7.0
+  iplddt:
+    cycle1_min: 70.0
+    final_min: 92.0
+
+proteinmpnn:
+  temperature: 0.1
+  # NLL percentile filter (lower NLL = better)
+  nll_top_pct_cycle1: 10
+  nll_top_pct_final: 5
+
+crosspan:
+  # ΔiPAE = iPAE(off-target) − iPAE(on-target)
+  # Larger ΔiPAE = more specific. Designs with min ΔiPAE below this are rejected.
+  min_delta_ipae: 3.0
+  # Off-target peptides scored (HLA-A*02:01 restricted, validated tumour/viral 9mers)
+  panel:
+    - { name: MART-1,  sequence: ELAGIGILTV, source: melanoma }
+    - { name: gp100,   sequence: IMDQVPFSV,  source: melanoma }
+    - { name: NY-ESO-1, sequence: SLLMWITQC, source: testis_cancer }
+    - { name: MAGE-A3, sequence: FLWGPRALV,  source: cancer_testis }
+    - { name: CMV-pp65, sequence: NLVPMVATV, source: viral }
+    - { name: Influenza-M1, sequence: GILGFVFTL, source: viral }
+
+diversity:
+  esm_model: esm2_t33_650M_UR50D
+  fps_n_select: 96     # designs taken forward per cycle
+  embedding_pool: mean # mean | cls
+
+active_learning:
+  surrogate: lightgbm   # baseline GP also trained for comparison
+  acquisition: ucb
+  ucb_kappa: 2.0
+  cycle1_train_size: 96 # synthetic labels seeded for cold-start
+
+controls:
+  # If P1 (Baker WT1 binder) falls below this percentile of designs, halt.
+  p1_min_percentile: 50
