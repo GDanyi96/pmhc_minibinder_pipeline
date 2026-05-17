@@ -222,8 +222,15 @@ __marimo__/
 CLAUDE.local.md
 .claude/settings.local.json
 
-# Runtime artefacts (per-cycle results are reproducible; reports/ is committed)
-results/
+# Runtime artefacts (per-cycle results are reproducible; reports/ is committed).
+# Allow metrics.json and *.log through so cycle evidence is captured in git;
+# bulk design outputs (PDBs, large MSA caches) stay out. Pattern uses
+# `results/**` (not `results/`) so the directory itself is walked and the
+# subsequent negations can match.
+results/**
+!results/**/
+!results/**/metrics.json
+!results/**/*.log
 wandb/
 .snakemake/
 

@@ -1,0 +1,50 @@
+2026-05-17 18:55:24,354 Running colabfold 1.6.1 (de5ab5f795ed95c70a7a9b6a9dc6bb5625016142)
+
+WARNING: You are welcome to use the default MSA server, however keep in mind that it's a
+limited shared resource only capable of processing a few thousand MSAs per day. Please
+submit jobs only from a single IP address. We reserve the right to limit access to the
+server case-by-case when usage exceeds fair use. If you require more MSAs: You can
+precompute all MSAs with `colabfold_search` or host your own API and pass it to `--host-url`
+
+2026-05-17 18:55:50,953 Running on GPU
+2026-05-17 18:55:52,012 Found 5 citations for tools or databases
+2026-05-17 18:55:52,014 Query 1/5: N1 (length 469)
+COMPLETE: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 600/600 [elapsed: 00:02 remaining: 00:00]
+COMPLETE: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 600/600 [elapsed: 00:01 remaining: 00:00]
+
+# First failure mode: JAX API drift (jnp.clip a_max kwarg removed in JAX 0.5+).
+# Fixed in commit 2 (pin JAX 0.4.34).
+  File "/workspace/pipeline/.venv/lib/python3.12/site-packages/alphafold/model/modules_multimer.py", line 520, in _relative_encoding
+    clipped_offset = jnp.clip(
+                     ^^^^^^^^^
+TypeError: clip() got an unexpected keyword argument 'a_max'
+
+# Second failure mode: SIGSEGV in cuDNN — RunPod LD_LIBRARY_PATH=/usr/local/cuda/lib64
+# (CUDA 13) overrides JAX cu12 wheels' bundled libs. Fixed in commit 3 (unset
+# LD_LIBRARY_PATH in bootstrap.sh + scripts/run_controls.py).
+Traceback (most recent call last):
+  File "/workspace/pipeline/scripts/run_controls.py", line 292, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/workspace/pipeline/scripts/run_controls.py", line 288, in main
+    return run(args.config, args.thresholds, args.cycle, args.mock, args.wt1_pdb)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/pipeline/scripts/run_controls.py", line 245, in run
+    run_colabfold.main(cf_argv)
+  File "/workspace/pipeline/workflow/scripts/run_colabfold.py", line 97, in main
+    run_real(fasta_dir, out_dir, args.num_recycles)
+  File "/workspace/pipeline/workflow/scripts/run_colabfold.py", line 67, in run_real
+    subprocess.run(cmd, check=True)
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['colabfold_batch', '--num-recycle', '6', '--model-type', 'alphafold2_multimer_v3', '--use-gpu-relax', 'results/cycle_01/stage2/colabfold/_controls_fasta', 'results/cycle_01/stage2/colabfold/controls']' died with <Signals.SIGSEGV: 11>.
+
+# After commit-2 + commit-3 fixes, ColabFold ran to completion. Surviving issues:
+# - ColabFold 1.6.1 wrote outputs flat (controls/P1_*) not in per-id subdirs.
+#   Fixed in commit 4a (run_colabfold.py: symlink flat outputs into per-id dirs).
+# - scores JSON key is now "pae" not "predicted_aligned_error".
+#   Fixed in commit 4b (compute_metrics.py: try "pae" then fall back).
+# - Halt rule "P1 rank ≤ 2 of 5" fired falsely: P2 ranks above P1 (longer
+#   published binder, more interface); P3 ranks above P1 (AF2 specificity
+#   blind spot, HOUSEHOLDER_GARCIA_2025, MARES_IOANNIDIS_2025). Fixed in
+#   commit 5 (rule: positives vs negatives gap, not P1 rank).
