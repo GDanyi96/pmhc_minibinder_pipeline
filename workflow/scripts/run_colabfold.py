@@ -52,6 +52,23 @@ def run_mock(fasta_dir: Path, out_dir: Path, fixtures: Path = FIXTURES_DIR) -> N
             )
 
 
+def _reshape_flat_outputs(out_dir: Path, ids: list[str]) -> None:
+    """ColabFold 1.6.1 writes outputs flat as `{out_dir}/{id}_*`, but
+    compute_metrics expects per-id subdirectories. Symlink each id's
+    files into `{out_dir}/{id}/` so glob `*_scores_rank_001*.json`
+    resolves there. Empirically required on cycle 1 pod run.
+    """
+    for cid in ids:
+        target = out_dir / cid
+        target.mkdir(exist_ok=True)
+        for src in out_dir.glob(f"{cid}_*"):
+            if src.is_dir():
+                continue
+            link = target / src.name
+            if not link.exists():
+                link.symlink_to(Path("..") / src.name)
+
+
 def run_real(fasta_dir: Path, out_dir: Path, num_recycles: int) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -65,6 +82,7 @@ def run_real(fasta_dir: Path, out_dir: Path, num_recycles: int) -> None:
         str(out_dir),
     ]
     subprocess.run(cmd, check=True)
+    _reshape_flat_outputs(out_dir, _ids_from_fasta_dir(fasta_dir))
 
 
 def main(argv: list[str] | None = None) -> int:

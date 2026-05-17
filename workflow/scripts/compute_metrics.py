@@ -38,9 +38,14 @@ DEFAULT_PDB_GLOB = "*_unrelaxed_rank_001*.pdb"
 
 def load_pae(scores_json: Path) -> list[list[float]]:
     payload = json.loads(scores_json.read_text())
-    pae = payload.get("predicted_aligned_error")
+    # ColabFold >= 1.6.0 renamed the key to "pae"; older versions used
+    # "predicted_aligned_error". Prefer the new name; fall back for compat
+    # with legacy fixtures and pre-1.6 ColabFold installs.
+    pae = payload.get("pae")
     if pae is None:
-        raise KeyError(f"{scores_json}: missing 'predicted_aligned_error'")
+        pae = payload.get("predicted_aligned_error")
+    if pae is None:
+        raise KeyError(f"{scores_json}: missing both 'pae' and 'predicted_aligned_error'")
     return pae
 
 
