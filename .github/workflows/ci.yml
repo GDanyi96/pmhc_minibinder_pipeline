@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  lint-and-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: ruff
+        run: ruff check .
+
+      - name: black --check
+        run: black --check .
+
+      - name: mypy --strict
+        run: mypy --strict workflow/scripts
+
+      - name: snakemake dry-run (mock)
+        run: snakemake --dry-run --config mock=true -j1
+
+      - name: pytest
+        run: pytest -q

@@ -21,9 +21,9 @@ def test_snakemake_dry_run_mock() -> None:
         text=True,
         timeout=60,
     )
-    assert result.returncode == 0, (
-        f"snakemake dry-run failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"snakemake dry-run failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
 
 
 @pytest.mark.skipif(shutil.which("snakemake") is None, reason="snakemake not installed")
@@ -38,7 +38,7 @@ def test_snakemake_mock_end_to_end(tmp_path: Path) -> None:
         text=True,
         timeout=120,
     )
-    assert result.returncode == 0, (
-        f"snakemake mock run failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"snakemake mock run failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
     assert (work / "reports" / "cycle_01.md").exists()
