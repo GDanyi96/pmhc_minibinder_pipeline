@@ -27,6 +27,13 @@ dev = [
 ]
 colabfold = [
     "colabfold[alphafold-minus-jax] @ git+https://github.com/sokrypton/ColabFold",
+    # Pin JAX 0.4.34: ColabFold 1.6.1 + alphafold ship jnp.clip(a_max=...)
+    # in modules_multimer.py:_relative_encoding. That kwarg was removed in
+    # JAX 0.5+; unpinned resolution lands on 0.10.x and the colabfold_batch
+    # subprocess raises `TypeError: clip() got an unexpected keyword
+    # argument 'a_max'`. Empirically reproduced on the cycle 1 pod run.
+    "jax[cuda12]==0.4.34",
+    "jaxlib==0.4.34",
 ]
 proteinmpnn = [
     "torch>=2.1",
