@@ -16,9 +16,11 @@ chains:
   peptide: C       # epitope
   binder: D        # de novo designed minibinder (added downstream)
 
-# Peptide-facing and α1/α2 hotspots per HADRUP_JENKINS_2025 protocol; placeholder
-# values, confirm against PyMOL inspection (deferred to v0+).
-hotspots_peptide: [C1, C3, C5, C7]       # peptide-side hotspots (TBD: confirm)
+# Peptide-facing and α1/α2 hotspots. Peptide hotspots exclude position 1
+# (semi-anchor S1) and position 9 (P-Ω anchor C9) per HADRUP_JENKINS_2025
+# Fig 1B and HOUSEHOLDER_GARCIA_2025 Methods; M4 is the canonical exposed
+# residue used by both groups. α1/α2 helix hotspots per HADRUP_JENKINS_2025.
+hotspots_peptide: [C3, C4, C5, C7]       # peptide-side hotspots
 hotspots_mhc: [A65, A66, A150, A155]     # MHC α1/α2 helix hotspots (TBD: confirm)
 
 binder:
