@@ -46,3 +46,20 @@ active_learning:
 controls:
   # If P1 (Baker WT1 binder) falls below this percentile of designs, halt.
   p1_min_percentile: 50
+
+# Stage 2 absolute gates — applied by scripts/run_controls.py.
+# These bound the controls-only run before any novel designs are scored.
+stage2:
+  cycle1:
+    ipae_max: 12.0       # HADRUP_JENKINS_2025 Fig 1A
+    iplddt_min: null
+  final:
+    ipae_max: 7.0        # HADRUP_JENKINS_2025 Fig 1A
+    iplddt_min: 92.0     # HADRUP_JENKINS_2025 Fig 1A
+  proteinmpnn:
+    temperature: 0.1
+    nll_top_fraction: 0.10
+  controls:
+    p1_ipae_max: 7.0
+    p2_ipae_tolerance: 2.0
+    p3_delta_min: 3.0

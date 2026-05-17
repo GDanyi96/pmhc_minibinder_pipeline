@@ -1,0 +1,52 @@
+{
+  "cycle": "01",
+  "stage": "2",
+  "timestamp": "MOCK",
+  "controls": {
+    "P1": {
+      "ipae": 5.0,
+      "iplddt": 95.0,
+      "bsa": 0.0,
+      "rank_001_pdb": "MOCK",
+      "scores_json": "MOCK",
+      "pass": true
+    },
+    "P2": {
+      "ipae": 6.5,
+      "iplddt": 95.0,
+      "bsa": 0.0,
+      "rank_001_pdb": "MOCK",
+      "scores_json": "MOCK",
+      "pass": true
+    },
+    "P3": {
+      "ipae": 9.0,
+      "iplddt": 95.0,
+      "bsa": 0.0,
+      "rank_001_pdb": "MOCK",
+      "scores_json": "MOCK",
+      "pass": true
+    },
+    "N1": {
+      "ipae": 17.0,
+      "iplddt": 95.0,
+      "bsa": 0.0,
+      "rank_001_pdb": "MOCK",
+      "scores_json": "MOCK",
+      "pass": true
+    },
+    "N2": {
+      "ipae": 22.0,
+      "iplddt": 95.0,
+      "bsa": 0.0,
+      "rank_001_pdb": "MOCK",
+      "scores_json": "MOCK",
+      "pass": true
+    }
+  },
+  "halt_gate": {
+    "passed": true,
+    "message": ""
+  },
+  "designs": []
+}

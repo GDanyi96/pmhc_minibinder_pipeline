@@ -32,7 +32,7 @@ jobs:
         run: black --check .
 
       - name: mypy --strict
-        run: mypy --strict workflow/scripts
+        run: mypy --strict workflow/scripts scripts
 
       - name: snakemake dry-run (mock)
         run: snakemake --dry-run --config mock=true -j1

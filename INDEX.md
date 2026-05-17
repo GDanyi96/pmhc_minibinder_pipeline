@@ -48,15 +48,22 @@ One-line description per tracked file. New file? Add a line here.
 
 ## workflow/scripts/
 
+- `workflow/scripts/__init__.py` — Marks workflow.scripts as a package (mypy + imports).
 - `workflow/scripts/prep_target.py` — Stage 0 entry point.
 - `workflow/scripts/run_rfdiffusion.py` — Stage 1 entry point.
-- `workflow/scripts/run_proteinmpnn.py` — Stage 2a entry point.
-- `workflow/scripts/run_colabfold.py` — Stage 2b entry point.
-- `workflow/scripts/compute_metrics.py` — Stage 2c (filters) entry point.
+- `workflow/scripts/run_proteinmpnn.py` — Stage 2a: ProteinMPNN complex-mode wrapper.
+- `workflow/scripts/run_colabfold.py` — Stage 2b: ColabFold (AF2-multimer) Docker wrapper.
+- `workflow/scripts/compute_metrics.py` — Stage 2c: iPAE / ipLDDT / BSA computation.
 - `workflow/scripts/crosspan.py` — Stage 3 entry point.
 - `workflow/scripts/embed_designs.py` — Stage 4 entry point.
 - `workflow/scripts/active_learning.py` — Stage 5 entry point.
 - `workflow/scripts/render_report.py` — Stage 6 entry point.
+
+## scripts/
+
+- `scripts/__init__.py` — Marks scripts as a package.
+- `scripts/generate_negatives.py` — Deterministic N1/N2 binder sequences (seed=42).
+- `scripts/run_controls.py` — Stage 2 Part A controls orchestrator + halt gate.
 
 ## configs/
 
@@ -64,6 +71,7 @@ One-line description per tracked file. New file? Add a line here.
 - `configs/target_2bnr_a0201.yaml` — Positive-control target spec (Jenkins NY1-B04 / 2BNR).
 - `configs/thresholds.yaml` — All numerical filter thresholds (iPAE, ipLDDT, NLL, etc).
 - `configs/rfdiffusion_default.yaml` — RFdiffusion noise scaling, hotspots, contig schema.
+- `configs/proteinmpnn_chains.json` — Per-PDB chain assignment for ProteinMPNN complex mode.
 
 ## data/
 
@@ -86,6 +94,9 @@ One-line description per tracked file. New file? Add a line here.
 - `tests/fixtures/colabfold/sample.pdb` — Stage 2b stub structure.
 - `tests/fixtures/colabfold/sample_scores.json` — Stage 2b stub PAE/pLDDT.
 - `tests/fixtures/metrics/sample_metrics.json` — Stage 2c stub filter scores.
+- `tests/fixtures/stage2/_make_fixtures.py` — Deterministic generator for the 5-control mock PAE/pLDDT JSONs.
+- `tests/fixtures/stage2/controls_colabfold/` — Mock ColabFold rank_001 JSON + PDB for P1, P2, P3, N1, N2.
+- `tests/fixtures/stage2/stage2_metrics_mock.json` — Mock Stage 2 metrics.json for rule 04 mock branch.
 - `tests/fixtures/crosspan/sample_panel.json` — Stage 3 stub.
 - `tests/fixtures/embeddings/sample.npz` — Stage 4 stub.
 - `tests/fixtures/active_learning/sample_predictions.json` — Stage 5 stub.
