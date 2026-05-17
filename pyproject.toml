@@ -13,6 +13,7 @@ dependencies = [
     "snakemake>=8.0,<9.0",
     "pyyaml>=6.0",
     "pydantic>=2.6",
+    "biopython>=1.83",
 ]
 
 [project.optional-dependencies]

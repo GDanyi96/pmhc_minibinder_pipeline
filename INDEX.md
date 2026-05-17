@@ -61,6 +61,7 @@ One-line description per tracked file. New file? Add a line here.
 ## configs/
 
 - `configs/target_wt1_a0201.yaml` — Locked primary target spec (chains, hotspots).
+- `configs/target_2bnr_a0201.yaml` — Positive-control target spec (Jenkins NY1-B04 / 2BNR).
 - `configs/thresholds.yaml` — All numerical filter thresholds (iPAE, ipLDDT, NLL, etc).
 - `configs/rfdiffusion_default.yaml` — RFdiffusion noise scaling, hotspots, contig schema.
 
@@ -78,7 +79,8 @@ One-line description per tracked file. New file? Add a line here.
 
 - `tests/__init__.py` — Marks tests as a package.
 - `tests/test_dry_run.py` — Asserts `snakemake --dry-run --config mock=true -j1` exits 0.
-- `tests/fixtures/target_3hpj_clean.pdb` — 1-line ATOM stub for stage 0.
+- `tests/fixtures/target_3hpj_clean.pdb` — 1-line ATOM stub for stage 0 primary.
+- `tests/fixtures/target_2bnr_clean.pdb` — 1-line ATOM stub for stage 0 positive control.
 - `tests/fixtures/rfdiffusion/sample.pdb` — Stage 1 stub backbone.
 - `tests/fixtures/proteinmpnn/sample.fasta` — Stage 2a stub sequence.
 - `tests/fixtures/colabfold/sample.pdb` — Stage 2b stub structure.
