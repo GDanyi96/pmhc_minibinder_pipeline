@@ -1,0 +1,11 @@
+# AF2-multimer config for Stage 2 real-designs fan-in.
+# References: HADRUP_JENKINS_2025 Fig 1A intermediate cut (iPAE<12 AND
+# ipLDDT>88) and fan-in shape (~5500 backbones -> 22000 sequences ->
+# 100-ish at intermediate cut). Halt threshold is calibration-only for
+# cycle 2; tighten in cycle 3 once partial diffusion lands.
+
+num_recycles: 6
+fan_in_top_n: 100
+halt_cut_ipae_max: 12.0
+halt_cut_iplddt_min: 88.0
+halt_threshold_fraction: 0.10

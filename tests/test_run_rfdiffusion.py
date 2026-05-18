@@ -83,8 +83,11 @@ def test_build_contigmap_rejects_missing_chain(tmp_path: Path) -> None:
 
 
 SEEDS = SeedsConfig(
-    formula="cycle * 1000 + design_index",
-    reserved={"cycle_01": [1000, 1999], "cycle_02": [2000, 2199]},
+    formulas={"rfdiffusion": "cycle * 1000 + design_index"},
+    reserved={
+        "cycle_01_rfdiffusion": [1000, 1999],
+        "cycle_02_rfdiffusion": [2000, 2199],
+    },
 )
 
 
@@ -107,8 +110,11 @@ def test_compute_seed_rejects_unknown_cycle() -> None:
 
 
 def test_compute_seed_rejects_unknown_formula() -> None:
-    bad = SeedsConfig(formula="cycle + design_index", reserved={"cycle_02": [2000, 2199]})
-    with pytest.raises(ValueError, match="unsupported seed formula"):
+    bad = SeedsConfig(
+        formulas={"rfdiffusion": "cycle + design_index"},
+        reserved={"cycle_02_rfdiffusion": [2000, 2199]},
+    )
+    with pytest.raises(ValueError, match="unsupported rfdiffusion seed formula"):
         _compute_seed(2, 0, bad)
 
 

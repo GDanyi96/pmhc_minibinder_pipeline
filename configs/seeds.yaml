@@ -1,15 +1,28 @@
 # Deterministic seeding for cycle-scoped runs.
-# Formula: seed = cycle * 1000 + design_index
-# - cycle is the integer cycle number (1, 2, ...).
-# - design_index is the 0-based index within the cycle's RFdiffusion batch.
-# Per-cycle ranges below are advisory: run_rfdiffusion._compute_seed asserts
-# that every emitted seed falls inside its cycle's reserved interval.
-# Reserved ranges cap cycle 2 at 200 designs (PoC scale; A100 ~2.5 h GPU
-# wall-time per HADRUP_JENKINS_2025 timing).
+#
+# Formulas are the canonical source; reserved ranges are assertion bounds.
+# Both `workflow.scripts.run_rfdiffusion._compute_seed` and
+# `workflow.scripts.aggregate_mpnn_outputs._compute_mpnn_seed` /
+# `_compute_af2_seed` re-derive seeds from these formulas and assert that
+# every emitted seed falls inside its cycle's per-stage reserved interval.
+# Reserved ranges cap cycle 2 at 200 RFdiffusion designs (PoC scale;
+# A100 ~2.5 h GPU wall-time per HADRUP_JENKINS_2025 timing).
 
-formula: "cycle * 1000 + design_index"
+formulas:
+  rfdiffusion: "cycle * 1000 + design_index"                          # cycle_02: 2000-2199
+  proteinmpnn: "cycle * 1000 + 200 + design_index * 4 + seq_index"    # cycle_02: 2200-2999
+  af2_fanin:   "cycle * 1000 + 1000 + fan_in_rank"                    # cycle_02: 3000-3099
 
 reserved:
-  cycle_01: [1000, 1999]   # unused -- cycle 1 ran controls + Stage 2 only, no RFdiffusion
-  cycle_02: [2000, 2199]   # 200 designs
-  cycle_99: [99000, 99999] # mock smoke tests (`--cycle 99`); not a real cycle
+  # Cycle 1 ran controls + Stage 2 only (no RFdiffusion); the range is kept
+  # so the snakemake mock end-to-end test, which defaults to --cycle 01,
+  # can still pass.
+  cycle_01_rfdiffusion: [1000, 1999]
+  cycle_02_rfdiffusion: [2000, 2199]
+  cycle_02_proteinmpnn: [2200, 2999]
+  cycle_02_af2_fanin:   [3000, 3099]
+  # Mock cycle 99: `--cycle 99` smoke tests. Each stage gets its own
+  # 100-seed slot so the assertion bounds remain stage-specific.
+  cycle_99_rfdiffusion: [99000, 99199]
+  cycle_99_proteinmpnn: [99200, 99999]
+  cycle_99_af2_fanin:   [100000, 100099]

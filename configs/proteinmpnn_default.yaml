@@ -1,0 +1,10 @@
+# ProteinMPNN sampling config for Stage 2 real-designs pipeline.
+# References: HADRUP_JENKINS_2025 (T=0.1, 4 seqs/backbone); BAKER_LAB_2025
+# (peptide-context specificity filter deferred to Stage 3).
+# Chain assignment: A=HC, B=beta2m, C=peptide (fixed) -- only D=binder is designed.
+
+model: v_48_020
+sampling_temperature: 0.1
+n_seqs_per_backbone: 4
+fixed_chains: [A, B, C]
+design_chains: [D]
