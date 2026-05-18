@@ -134,11 +134,11 @@ clone_rfdiffusion
 # in the initial commit; on first download the script prints the computed
 # value and aborts asking the operator to pin it. Same flow applies in
 # cycle 3 if the upstream checkpoint rotates.
-RFDIFF_CKPT_SHA256="${RFDIFF_CKPT_SHA256:-}"
+RFDIFF_CKPT_SHA256="${RFDIFF_CKPT_SHA256:-76e4e260aefee3b582bd76b77ab95d2592e64f00c51bf344968ab9239f3250bc}"
 # URL scheme note: RFdiffusion README publishes http://files.ipd.uw.edu/...;
 # verify whether https://files.ipd.uw.edu/... resolves before final pin.
 # sha256 verification closes any in-transit integrity gap regardless.
-RFDIFF_CKPT_URL="${RFDIFF_CKPT_URL:-http://files.ipd.uw.edu/pub/RFdiffusion/6f5902ac237024bdd0c176cb93063dc4/Complex_base_ckpt.pt}"
+RFDIFF_CKPT_URL="${RFDIFF_CKPT_URL:-http://files.ipd.uw.edu/pub/RFdiffusion/e29311f6f1bf1af907f9ef9f44b8328b/Complex_base_ckpt.pt}"
 
 download_rfdiffusion_weights() {
   local models_dir="${RFDIFFUSION_MODELS_DIR:-/workspace/models/RFdiffusion}"
