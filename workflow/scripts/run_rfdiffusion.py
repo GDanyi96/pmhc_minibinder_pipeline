@@ -151,37 +151,54 @@ def _load_seeds(seeds_yaml: Path) -> SeedsConfig:
         return SeedsConfig.model_validate(yaml.safe_load(fh))
 
 
-def _read_chain_lengths(cleaned_pdb: Path) -> dict[str, int]:
-    """Return {chain_id: number_of_standard_residues} for a cleaned PDB."""
+def _chain_residue_range(cleaned_pdb: Path, chain_id: str) -> tuple[int, int, int]:
+    """Return (first_resnum, last_resnum, count) for standard residues in a chain.
+
+    Skips HETATM/water residues so the result matches prep_target.py's
+    ``_residues``-based length accounting. β2m chains starting at residue 0
+    (initiator-MET crystallographic convention, e.g. 3HPJ) are preserved.
+    """
     parser = PDBParser(QUIET=True)
-    structure: Structure = parser.get_structure(cleaned_pdb.stem, str(cleaned_pdb))
+    structure: Structure = parser.get_structure("t", str(cleaned_pdb))
     model = structure[0]
-    out: dict[str, int] = {}
-    for chain in model.get_chains():
-        residues = [r for r in chain.get_residues() if r.id[0].strip() == ""]
-        out[chain.id] = len(residues)
-    return out
+    if chain_id not in model:
+        raise ValueError(f"{cleaned_pdb}: chain {chain_id} absent")
+    resnums = [
+        r.id[1] for r in model[chain_id].get_residues() if r.id[0].strip() == ""
+    ]
+    if not resnums:
+        raise ValueError(f"{cleaned_pdb}: no standard residues in chain {chain_id}")
+    return resnums[0], resnums[-1], len(resnums)
 
 
 def _build_contigmap(target: ResolvedTarget, cleaned_pdb: Path) -> str:
-    """Build the RFdiffusion contigmap string from runtime chain lengths.
+    """Build the RFdiffusion contigmap string from actual PDB residue ranges.
 
-    Format: "A1-<hc_len>/0 B1-<b2m_len>/0 C1-<pep_len>/0 <min>-<max>".
+    Format: "<chain>{first}-{last}/0 ... <min>-<max>" where first/last come
+    from the cleaned PDB itself (not the manifest's length). The manifest
+    length is used only as a sanity assertion. This handles β2m chains
+    starting at residue 0 (e.g. 3HPJ chain B = residues 0-99) which the
+    previous "<chain>1-<length>/0" formatting silently broke.
 
-    Chain lengths read at runtime from the cleaned PDB to avoid the cycle-1
-    cleavage trap (hardcoded "A1-275 B1-99 C1-9" would silently mismatch on
-    a different pMHC).
+    Iterates non-binder chains in manifest insertion order (typically A,
+    B, C); the binder chain (role: binder, length: null) contributes the
+    de novo length token (e.g. "70-110") at the end.
     """
-    chain_lengths = _read_chain_lengths(cleaned_pdb)
-    for cid in ("A", "B", "C"):
-        if cid not in chain_lengths:
-            raise ValueError(f"{cleaned_pdb}: chain {cid} absent")
-    hc_len = chain_lengths["A"]
-    b2m_len = chain_lengths["B"]
-    pep_len = chain_lengths["C"]
+    segments: list[str] = []
+    for chain_id, chain in target.chains.items():
+        if chain.role == "binder":
+            continue
+        first, last, count = _chain_residue_range(cleaned_pdb, chain_id)
+        if chain.length is not None and count != chain.length:
+            raise ValueError(
+                f"{cleaned_pdb}: chain {chain_id} has {count} standard residues "
+                f"but manifest declares length={chain.length}"
+            )
+        segments.append(f"{chain_id}{first}-{last}/0")
     lo = target.binder.length_min
     hi = target.binder.length_max
-    return f"A1-{hc_len}/0 B1-{b2m_len}/0 C1-{pep_len}/0 {lo}-{hi}"
+    segments.append(f"{lo}-{hi}")
+    return " ".join(segments)
 
 
 def _compute_seed(cycle: int, design_index: int, seeds: SeedsConfig) -> int:
@@ -379,12 +396,18 @@ def _file_sha256(path: Path) -> str:
 
 
 def _run_inference_per_design(
-    out_dir: Path, contig: str, hotspot_tokens: list[str], seed: int, ckpt: Path
+    out_dir: Path,
+    contig: str,
+    hotspot_tokens: list[str],
+    seed: int,
+    ckpt: Path,
+    cleaned_pdb: Path,
 ) -> None:
     rfdiffusion_python = _resolve_rfdiffusion_python()
     cmd = [
         rfdiffusion_python,
         str(RFDIFFUSION_DIR / "scripts" / "run_inference.py"),
+        f"inference.input_pdb={cleaned_pdb}",
         f"inference.output_prefix={out_dir}/design",
         "inference.num_designs=1",
         f"inference.ckpt_override_path={ckpt}",
@@ -407,11 +430,13 @@ def _run_inference_single_batch(
     base_seed: int,
     num_designs: int,
     ckpt: Path,
+    cleaned_pdb: Path,
 ) -> None:
     rfdiffusion_python = _resolve_rfdiffusion_python()
     cmd = [
         rfdiffusion_python,
         str(RFDIFFUSION_DIR / "scripts" / "run_inference.py"),
+        f"inference.input_pdb={cleaned_pdb}",
         f"inference.output_prefix={out_dir}/design",
         f"inference.num_designs={num_designs}",
         f"inference.ckpt_override_path={ckpt}",
@@ -492,7 +517,13 @@ def run_rfdiffusion(
             base_seed = _compute_seed(cycle, 0, seeds)
             _ = _compute_seed(cycle, num_designs - 1, seeds)
             _run_inference_single_batch(
-                designs_dir, contig, hotspot_tokens, base_seed, num_designs, ckpt_path
+                designs_dir,
+                contig,
+                hotspot_tokens,
+                base_seed,
+                num_designs,
+                ckpt_path,
+                cleaned_pdb,
             )
         else:
             for design_index in range(num_designs):
@@ -500,7 +531,9 @@ def run_rfdiffusion(
                 expected_pdb = designs_dir / f"design_{design_index:05d}.pdb"
                 if expected_pdb.exists():
                     continue
-                _run_inference_per_design(designs_dir, contig, hotspot_tokens, seed, ckpt_path)
+                _run_inference_per_design(
+                    designs_dir, contig, hotspot_tokens, seed, ckpt_path, cleaned_pdb
+                )
         effective_designs = num_designs
 
     rfdiff_sha = _git_sha(RFDIFFUSION_DIR)
