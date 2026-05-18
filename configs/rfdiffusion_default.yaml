@@ -1,26 +1,29 @@
-# RFdiffusion defaults for cycle 1.
-# Per HADRUP_JENKINS_2025: noise_scale_ca=0, hotspot-guided, partial diffusion
-# for scaffold reuse from prior winners (BAKER_LAB_2025).
+# RFdiffusion defaults for cycle 2.
+# Per HADRUP_JENKINS_2025: noise_scale_ca=0, hotspot-guided, vanilla
+# Complex_base checkpoint. Partial diffusion for scaffold reuse from prior
+# winners (BAKER_LAB_2025) is deferred to cycle 3.
 
 inference:
-  num_designs: 10000
-  ckpt_override_path: /workspace/models/rfdiffusion/Complex_base_ckpt.pt
+  num_designs: 200
+  ckpt_override_path: /workspace/models/RFdiffusion/Complex_base_ckpt.pt
 
 denoiser:
-  noise_scale_ca: 0       # per HADRUP_JENKINS_2025
+  noise_scale_ca: 0       # HADRUP_JENKINS_2025
   noise_scale_frame: 0
 
 contigmap:
-  # Filled per-target at runtime from configs/target_*.yaml + binder length range.
-  # Schema: "<target_chains>/0 <binder_len>-<binder_len>"
-  contigs_template: "A1-275/0 B1-99/0 C1-9/0 {binder_min}-{binder_max}"
+  # No hardcoded chains_template here. The contig string is built at
+  # runtime by run_rfdiffusion._build_contigmap from the actual chain
+  # lengths in the cleaned PDB (`data/targets/3hpj_clean.pdb`) and the
+  # binder length range in `results/cycle_NN/stage0/target.yaml`. Cycle 1
+  # carried a hardcoded "A1-275/0 B1-99/0 C1-9/0" template here, which is
+  # fragile across pMHC targets — schema kept for forward compat, empty.
 
 ppi:
-  # Hotspots passed as list "[A65,A66,A150,A155]" — read from target yaml.
-  hotspot_res_from_target: true
+  hotspot_res_from_target: true   # read from target.yaml at runtime
 
-# Partial diffusion (cycle ≥ 2): seed from prior winners, partial_T noise
-partial_diffusion:
-  enabled: false           # toggled on for cycle ≥ 2
-  partial_T: 10            # noise level to repartial from
-  starting_pdbs_glob: "results/cycle_*/winners/*.pdb"
+# Partial diffusion is BAKER_LAB_2025's privileged-scaffold reuse pathway
+# and is OFF for cycle 2 (BAKER_LAB_2025 Data S1: wt1-5 / wt1-8 are de
+# novo, scaffold=No). Cycle 3 will enable this with `partial_T: 10` and
+# `starting_pdbs_glob: results/cycle_*/winners/*.pdb`.
+partial_T: null

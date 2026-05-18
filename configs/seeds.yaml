@@ -1,0 +1,14 @@
+# Deterministic seeding for cycle-scoped runs.
+# Formula: seed = cycle * 1000 + design_index
+# - cycle is the integer cycle number (1, 2, ...).
+# - design_index is the 0-based index within the cycle's RFdiffusion batch.
+# Per-cycle ranges below are advisory: run_rfdiffusion._compute_seed asserts
+# that every emitted seed falls inside its cycle's reserved interval.
+# Reserved ranges cap cycle 2 at 200 designs (PoC scale; A100 ~2.5 h GPU
+# wall-time per HADRUP_JENKINS_2025 timing).
+
+formula: "cycle * 1000 + design_index"
+
+reserved:
+  cycle_01: [1000, 1999]   # unused — cycle 1 ran controls + Stage 2 only, no RFdiffusion
+  cycle_02: [2000, 2199]   # 200 designs
