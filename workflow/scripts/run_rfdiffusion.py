@@ -392,7 +392,8 @@ def _run_inference_per_design(
         f"ppi.hotspot_res=[{','.join(hotspot_tokens)}]",
         "denoiser.noise_scale_ca=0",
         "denoiser.noise_scale_frame=0",
-        f"inference.random_seed={seed}",
+        "inference.deterministic=True",
+        f"inference.design_startnum={seed}",
     ]
     logger.info(f"Launching RFdiffusion with interpreter: {rfdiffusion_python}")
     logger.info(f"Full cmd: {cmd}")
@@ -418,7 +419,8 @@ def _run_inference_single_batch(
         f"ppi.hotspot_res=[{','.join(hotspot_tokens)}]",
         "denoiser.noise_scale_ca=0",
         "denoiser.noise_scale_frame=0",
-        f"inference.random_seed={base_seed}",
+        "inference.deterministic=True",
+        f"inference.design_startnum={base_seed}",
     ]
     logger.info(f"Launching RFdiffusion with interpreter: {rfdiffusion_python}")
     logger.info(f"Full cmd: {cmd}")
