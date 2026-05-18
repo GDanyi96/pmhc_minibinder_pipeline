@@ -34,7 +34,7 @@ def test_mock_run_produces_pass_summary(tmp_path: Path) -> None:
     assert summary["n_completed"] == 10
     assert summary["n_geometry_pass"] == 8
     assert summary["fraction_geometry_pass"] == 0.8
-    assert summary["seed_range"] == [99000, 99999]
+    assert summary["seed_range"] == [99000, 99199]
     assert summary["halt_rule"]["verdict"] == "PASS"
     assert summary["halt_rule"]["threshold"] == HALT_THRESHOLD
     assert summary["halt_rule"]["observed"] == 0.8

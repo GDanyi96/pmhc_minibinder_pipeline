@@ -244,6 +244,7 @@ wandb/
 # backbones under results/**/stage1/rfdiffusion/designs/.
 !tests/fixtures/**/*.pdb
 !results/**/stage1/rfdiffusion/samples/*.pdb
+!results/**/stage2/**/samples/*.pdb
 
 # Model weights are downloaded by bootstrap.sh; never tracked
 models/

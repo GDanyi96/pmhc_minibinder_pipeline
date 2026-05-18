@@ -62,6 +62,8 @@ echo "  ColabFold (colabfold_batch CLI) was installed via the 'colabfold' extra 
 
 # ProteinMPNN ships as a git repo, not a pip wheel. Clone (or update) under
 # /workspace so run_proteinmpnn.py's default PROTEINMPNN_DIR resolves.
+# The vanilla_model_weights/ subdir ships with the clone (no separate
+# download URL); we sha256-verify the bundled weight file in-place.
 PROTEINMPNN_DIR="${PROTEINMPNN_DIR:-/workspace/ProteinMPNN}"
 if [ -d "$PROTEINMPNN_DIR/.git" ]; then
   echo "  ProteinMPNN already cloned at $PROTEINMPNN_DIR — pulling latest..."
@@ -70,6 +72,35 @@ else
   echo "  Cloning ProteinMPNN to $PROTEINMPNN_DIR..."
   git clone https://github.com/dauparas/ProteinMPNN "$PROTEINMPNN_DIR"
 fi
+
+# Pinned sha256 for ProteinMPNN's bundled v_48_020.pt weight file.
+# Self-bootstrapping: leave empty in the initial commit; on first run the
+# script prints the computed value and aborts asking the operator to pin
+# it. Same flow applies when upstream rotates the weight.
+PROTEINMPNN_CKPT_SHA256="${PROTEINMPNN_CKPT_SHA256:-}"
+verify_proteinmpnn_weight() {
+  local ckpt="$PROTEINMPNN_DIR/vanilla_model_weights/v_48_020.pt"
+  if [ ! -f "$ckpt" ]; then
+    echo "FAIL: $ckpt not found — did the clone include vanilla_model_weights/?"
+    exit 1
+  fi
+  if [ -z "$PROTEINMPNN_CKPT_SHA256" ]; then
+    local computed
+    computed=$(sha256sum "$ckpt" | cut -d' ' -f1)
+    echo "FAIL: PROTEINMPNN_CKPT_SHA256 not pinned in bootstrap.sh."
+    echo "Computed value for this checkout: $computed"
+    echo "Edit bootstrap.sh and set PROTEINMPNN_CKPT_SHA256=\"$computed\", then re-run."
+    exit 1
+  fi
+  if ! echo "${PROTEINMPNN_CKPT_SHA256}  ${ckpt}" | sha256sum -c - >/dev/null; then
+    echo "FAIL: v_48_020.pt sha256 mismatch — upstream rotated the weight?"
+    echo "  expected: $PROTEINMPNN_CKPT_SHA256"
+    echo "  actual:   $(sha256sum "$ckpt" | cut -d' ' -f1)"
+    exit 1
+  fi
+  echo "  v_48_020.pt: sha256 verified"
+}
+verify_proteinmpnn_weight
 
 # Sanity: colabfold_batch must be on PATH after the colabfold extra install.
 if uv run colabfold_batch --help >/dev/null 2>&1; then

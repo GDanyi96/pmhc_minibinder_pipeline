@@ -1,0 +1,66 @@
+cycle: '99'
+mock: true
+positive_control:
+  binder:
+    length_max: 10
+    length_min: 1
+  chains:
+    A:
+      length: 2
+      role: heavy_chain
+    B:
+      length: 2
+      role: beta2m
+    C:
+      length: 2
+      role: peptide
+    D:
+      length: null
+      role: binder
+  cleaned_pdb: mock_pmhc.pdb
+  hotspots:
+    mhc:
+    - chain: A
+      resnum_clean: 65
+      resnum_rcsb: 65
+      token: A65
+    peptide:
+    - chain: C
+      resnum_clean: 1
+      resnum_rcsb: 1
+      token: C1
+  pdb_id: MOCK
+  peptide_sequence: RM
+  target_id: ny1b04
+primary:
+  binder:
+    length_max: 10
+    length_min: 1
+  chains:
+    A:
+      length: 2
+      role: heavy_chain
+    B:
+      length: 2
+      role: beta2m
+    C:
+      length: 2
+      role: peptide
+    D:
+      length: null
+      role: binder
+  cleaned_pdb: mock_pmhc.pdb
+  hotspots:
+    mhc:
+    - chain: A
+      resnum_clean: 65
+      resnum_rcsb: 65
+      token: A65
+    peptide:
+    - chain: C
+      resnum_clean: 1
+      resnum_rcsb: 1
+      token: C1
+  pdb_id: MOCK
+  peptide_sequence: RM
+  target_id: wt1_a0201

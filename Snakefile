@@ -20,6 +20,8 @@ include: "workflow/rules/01_rfdiffusion.smk"
 include: "workflow/rules/02_proteinmpnn.smk"
 include: "workflow/rules/03_colabfold.smk"
 include: "workflow/rules/04_metrics.smk"
+include: "workflow/rules/02b_proteinmpnn_designs.smk"
+include: "workflow/rules/03b_af2_designs.smk"
 include: "workflow/rules/05_crosspan.smk"
 include: "workflow/rules/06_embedding.smk"
 include: "workflow/rules/07_active_learning.smk"
@@ -29,3 +31,4 @@ include: "workflow/rules/08_reporting.smk"
 rule all:
     input:
         f"reports/cycle_{CYCLE}.md",
+        str(RESULTS / "stage2" / ".done"),

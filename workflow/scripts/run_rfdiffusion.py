@@ -86,7 +86,7 @@ RFDIFFUSION_MODELS_DIR = Path(
 
 
 class SeedsConfig(BaseModel):
-    formula: str
+    formulas: dict[str, str]
     reserved: dict[str, list[int]]
 
 
@@ -164,14 +164,16 @@ def _build_contigmap(target: ResolvedTarget, cleaned_pdb: Path) -> str:
 
 
 def _compute_seed(cycle: int, design_index: int, seeds: SeedsConfig) -> int:
-    """Apply the seed formula, enforce the cycle's reserved range."""
-    if seeds.formula != "cycle * 1000 + design_index":
+    """Apply the rfdiffusion seed formula, enforce the cycle's reserved range."""
+    expected = "cycle * 1000 + design_index"
+    actual = seeds.formulas.get("rfdiffusion")
+    if actual != expected:
         raise ValueError(
-            f"unsupported seed formula {seeds.formula!r}; "
+            f"unsupported rfdiffusion seed formula {actual!r}; "
             "update run_rfdiffusion._compute_seed when adding new formulas"
         )
     seed = cycle * 1000 + design_index
-    key = f"cycle_{cycle:02d}"
+    key = f"cycle_{cycle:02d}_rfdiffusion"
     if key not in seeds.reserved:
         raise ValueError(f"seeds.yaml: no reserved range for {key}")
     lo, hi = seeds.reserved[key]
@@ -516,7 +518,7 @@ def run_rfdiffusion(
     fraction = (n_pass / n_completed) if n_completed else 0.0
     verdict = "PASS" if fraction >= halt_threshold else "FAIL"
 
-    seed_lo, seed_hi = seeds.reserved[f"cycle_{cycle:02d}"]
+    seed_lo, seed_hi = seeds.reserved[f"cycle_{cycle:02d}_rfdiffusion"]
     summary: dict[str, Any] = {
         "cycle": cycle,
         "target_id": target.target_id,
