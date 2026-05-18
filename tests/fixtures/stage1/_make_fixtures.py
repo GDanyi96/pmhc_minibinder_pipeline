@@ -76,11 +76,17 @@ def write_mock_clean_pdb(out: Path) -> None:
 
 
 def write_mock_target_yaml(out: Path, cleaned_pdb: Path) -> None:
-    """Pre-built TargetManifest pointing at cleaned_pdb."""
+    """Pre-built TargetManifest pointing at cleaned_pdb.
+
+    cleaned_pdb is written as a bare filename relative to the manifest's
+    own directory. Absolute paths in committed fixtures are CI-fragile
+    (they bake in the generator's sandbox path and silently break when
+    the repo is cloned elsewhere) -- see docs/known_traps.md trap #16.
+    """
     primary = {
         "target_id": "wt1_a0201",
         "pdb_id": "3HPJ",
-        "cleaned_pdb": str(cleaned_pdb),
+        "cleaned_pdb": cleaned_pdb.name,
         "peptide_sequence": "RMFPNAPYL",
         "chains": {
             "A": {"role": "heavy_chain", "length": 4},

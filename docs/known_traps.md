@@ -123,6 +123,32 @@ flip the constant to `"single_subprocess"` only if the three-design
 smoke test confirms threaded seeding. The per-design fallback always
 works but pays ~30-60 min of model-load overhead per 200-design batch.
 
+## Never commit absolute paths in fixture YAMLs
+
+Trap #16. Symptom: `pytest -q` is green locally but CI fails with
+`FileNotFoundError: /home/user/.../tests/fixtures/.../something.pdb`.
+Root cause: a fixture generator (e.g. `tests/fixtures/stage1/_make_fixtures.py`)
+wrote an absolute path into a committed YAML via `str(some_absolute_path)`.
+The path lives only in the generator's sandbox; once the repo is cloned
+elsewhere, the path no longer resolves.
+
+**Fix**: at *generation* time, write filesystem paths in committed
+fixtures as either a bare filename (relative to the manifest's own
+directory) or a repo-relative path -- never absolute. At *consumer*
+time, resolve relative paths defensively: try
+`(manifest_path.parent / relative).exists()` first, then fall back to
+treating the path as cwd-relative. See
+`workflow.scripts.run_rfdiffusion._resolve_cleaned_pdb`.
+
+**Recurrence guard**: `tests/test_no_absolute_paths_in_committed_fixtures.py`
+walks `tests/fixtures/`, parses every YAML, and asserts no string value
+starts with `/`. Sub-100ms; catches the next leak before push.
+
+**Why locally-clean isn't enough**: the failure mode requires running
+tests from a different absolute path than the generator. Always verify a
+PR in a fresh-checkout dir before push (`git clone . /tmp/clean && cd
+/tmp/clean && uv sync --extra dev && uv run pytest -q`).
+
 ## RFdiffusion checkpoint integrity via pinned sha256
 
 Trap #15. `bootstrap.sh --with-rfdiffusion-weights` downloads

@@ -90,10 +90,39 @@ class SeedsConfig(BaseModel):
     reserved: dict[str, list[int]]
 
 
+def _resolve_cleaned_pdb(raw_path: str, manifest_path: Path) -> str:
+    """Resolve TargetManifest.primary.cleaned_pdb to an existing file.
+
+    Two conventions in play:
+    * Mock fixture manifests bundle the cleaned PDB next to themselves;
+      cleaned_pdb is a bare filename like "mock_clean.pdb".
+    * Real manifests written by prep_target.py use cwd-relative paths like
+      "data/targets/3hpj_clean.pdb" (resolved when snakemake runs from
+      repo root).
+
+    Strategy: if absolute, take as-is. Otherwise prefer the file next to
+    the manifest, then fall back to cwd-relative. Absolute paths must
+    never be baked into committed fixtures (trap #16).
+    """
+    candidate = Path(raw_path)
+    if candidate.is_absolute():
+        return str(candidate)
+    next_to_manifest = manifest_path.parent / candidate
+    if next_to_manifest.exists():
+        return str(next_to_manifest.resolve())
+    return str(candidate)
+
+
 def _load_target(manifest_path: Path) -> TargetManifest:
     with manifest_path.open() as fh:
         raw = yaml.safe_load(fh)
-    return TargetManifest.model_validate(raw)
+    manifest = TargetManifest.model_validate(raw)
+    manifest.primary.cleaned_pdb = _resolve_cleaned_pdb(manifest.primary.cleaned_pdb, manifest_path)
+    if manifest.positive_control is not None:
+        manifest.positive_control.cleaned_pdb = _resolve_cleaned_pdb(
+            manifest.positive_control.cleaned_pdb, manifest_path
+        )
+    return manifest
 
 
 def _load_seeds(seeds_yaml: Path) -> SeedsConfig:

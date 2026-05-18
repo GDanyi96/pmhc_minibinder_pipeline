@@ -3,7 +3,7 @@ mock: true
 primary: &id001
   target_id: wt1_a0201
   pdb_id: 3HPJ
-  cleaned_pdb: /home/user/pmhc_minibinder_pipeline/tests/fixtures/stage1/mock_clean.pdb
+  cleaned_pdb: mock_clean.pdb
   peptide_sequence: RMFPNAPYL
   chains:
     A:
