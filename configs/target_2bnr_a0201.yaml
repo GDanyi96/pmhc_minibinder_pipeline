@@ -1,0 +1,30 @@
+# Positive control target: Jenkins NY1-B04 vs SLLMWITQC / HLA-A*02:01 (PDB 2BNR).
+# Per HADRUP_JENKINS_2025 chain conventions for AF2-multimer.
+#
+# Note: 2BNR is deposited as a TCR-pMHC complex. Chain D (TCR alpha, ~203 res)
+# and chain E (TCR beta, ~241 res) are stripped by stage 0 to leave the bare
+# pMHC scaffold for binder design / control panel structure prediction.
+
+target_id: jenkins_ny1b04_a0201
+pdb_id: 2BNR
+peptide_sequence: SLLMWITQC
+mhc_allele: HLA-A*02:01
+
+chains:
+  heavy_chain: A   # MHC class I heavy chain
+  beta2m: B        # β2-microglobulin
+  peptide: C       # epitope
+  binder: D        # de novo designed minibinder (added downstream)
+
+# Peptide-facing and α1/α2 hotspots. Peptide hotspots exclude position 1
+# (semi-anchor S1) and position 9 (P-Ω anchor C9) per HADRUP_JENKINS_2025
+# Fig 1B and HOUSEHOLDER_GARCIA_2025 Methods; M4 is the canonical exposed
+# residue used by both groups. α1/α2 helix hotspots per HADRUP_JENKINS_2025.
+hotspots_peptide: [C3, C4, C5, C7]       # peptide-side hotspots
+hotspots_mhc: [A65, A66, A150, A155]     # MHC α1/α2 helix hotspots (TBD: confirm)
+
+binder:
+  length_min: 55
+  length_max: 75
+
+cleaned_pdb_path: data/targets/2bnr_clean.pdb

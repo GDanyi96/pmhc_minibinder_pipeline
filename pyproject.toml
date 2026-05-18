@@ -1,0 +1,75 @@
+[project]
+name = "pmhc-minibinder-pipeline"
+version = "0.0.1"
+description = "De novo pMHC-I minibinder design pipeline for CAR-T specificity"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+authors = [{ name = "GDanyi96" }]
+
+# Minimal kickoff deps. Heavy ML deps (torch, biopython, esm, lightgbm,
+# colabfold-batch, etc.) are added per-stage as their specs land.
+dependencies = [
+    "snakemake>=8.0,<9.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.6",
+    "biopython>=1.83",
+    "freesasa>=2.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4",
+    "black>=24.0",
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "types-PyYAML",
+]
+colabfold = [
+    "colabfold[alphafold-minus-jax] @ git+https://github.com/sokrypton/ColabFold",
+    # Pin JAX 0.4.34: ColabFold 1.6.1 + alphafold ship jnp.clip(a_max=...)
+    # in modules_multimer.py:_relative_encoding. That kwarg was removed in
+    # JAX 0.5+; unpinned resolution lands on 0.10.x and the colabfold_batch
+    # subprocess raises `TypeError: clip() got an unexpected keyword
+    # argument 'a_max'`. Empirically reproduced on the cycle 1 pod run.
+    "jax[cuda12]==0.4.34",
+    "jaxlib==0.4.34",
+]
+proteinmpnn = [
+    "torch>=2.1",
+    "numpy>=1.26",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+# Required for the `colabfold` optional extra, which pins
+# colabfold[alphafold-minus-jax] via a git URL (no PyPI release of the
+# sokrypton fork with the alphafold-minus-jax extra).
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["workflow"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+files = ["workflow/scripts", "scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

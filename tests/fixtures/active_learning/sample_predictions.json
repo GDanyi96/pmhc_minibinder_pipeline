@@ -1,0 +1,11 @@
+{
+  "mock": true,
+  "model": "lightgbm",
+  "predictions": {
+    "design_00000": {"mu": 0.82, "sigma": 0.11, "ucb": 1.04}
+  },
+  "train_metrics": {"mae": 0.08, "r2": 0.71, "n_train": 96, "n_val": 24},
+  "gp_baseline": {"mae": 0.10, "r2": 0.65},
+  "acquisition": "ucb",
+  "kappa": 2.0
+}

@@ -1,0 +1,28 @@
+# Primary target: WT1 RMFPNAPYL / HLA-A*02:01 (PDB 3HPJ)
+# Per HADRUP_JENKINS_2025 chain conventions for AF2-multimer.
+
+target_id: wt1_a0201
+pdb_id: 3HPJ
+peptide_sequence: RMFPNAPYL
+mhc_allele: HLA-A*02:01
+
+chains:
+  heavy_chain: A   # MHC class I heavy chain
+  beta2m: B        # β2-microglobulin
+  peptide: C       # epitope
+  binder: D        # de novo designed minibinder (added downstream)
+
+# Hotspot residues on the peptide-presenting surface used by RFdiffusion to bias
+# the diffusion towards a binding pose. Final list is set in stage 0; placeholder
+# values below are derived from the peptide solvent-exposed residues per
+# HADRUP_JENKINS_2025 protocol. Confirm against PyMOL inspection in stage 0.
+hotspots_peptide: [C1, C4, C6, C8]      # peptide-side hotspots (TBD: confirm)
+hotspots_mhc: [A65, A66, A150, A155]    # MHC α1/α2 helix hotspots (TBD: confirm)
+
+# Binder design constraints (stage 1)
+binder:
+  length_min: 55
+  length_max: 75
+
+# Source of cleaned PDB (populated by stage 0)
+cleaned_pdb_path: data/targets/3hpj_clean.pdb

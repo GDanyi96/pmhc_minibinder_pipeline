@@ -1,0 +1,95 @@
+controls:
+- id: P1
+  label: positive
+  description: Baker wt1-5 vs RMFPNAPYL/HLA-A*02:01 (on-target)
+  binder_sequence: LTPEERQRREAIVESVRLTLEALELDIEYAEREGFDLRAELELVLLTADSLRVEVESNPDLTPEEKEELLRQIDKLRERARKRLQ
+  binder_length: 85
+  target_peptide: RMFPNAPYL
+  target_hla: HLA-A*02:01
+  target_pdb: 3HPJ
+  backbone_pdb: data/targets/3hpj_clean.pdb
+  expected_ipae_max: 7.0
+  halt_on_fail: true
+  source: BAKER_LAB_2025 Science 2025 Data S1 (science.org/doi/10.1126/science.adv0185)
+  structural_fingerprint: E40-bidentate-R1(peptide), I12-Hbond-Y8(peptide)
+- id: P2
+  label: positive
+  description: Jenkins NY1-B04 vs SLLMWITQC/HLA-A*02:01 (ColabFold calibration)
+  binder_sequence: MKEELRAAAAELLAAAEALAEELRRLGLEEAAAHVLAAARHVAAALELIAATPASELNPELKREVAAHLREAAAHFEAAAEIVAAEDPLAGAMLREAALAARSMAAYVLHSSPEEALQQAAVFATGLAGAMLTMTGLVRERLAAR
+  binder_length: 145
+  target_peptide: SLLMWITQC
+  target_hla: HLA-A*02:01
+  target_pdb: 2BNR
+  backbone_pdb: data/targets/2bnr_clean.pdb
+  expected_ipae: 6.5
+  expected_ipae_tolerance: 2.0
+  halt_on_fail: true
+  source: HADRUP_JENKINS_2025 Fig 1B; PDB 9NNF chain A (cryo-EM 3.8 Ang)
+  note: 'If |actual_ipae - 6.5| > 2.0 Ang halt with ColabFold calibration failure message.
+
+    Catches misconfigured runs before any novel designs are scored.
+
+    '
+- id: P3
+  label: positive_offtarget
+  description: Baker wt1-5 vs ELAGIGILTV/HLA-A*02:01 (cross-reactivity check)
+  binder_sequence: LTPEERQRREAIVESVRLTLEALELDIEYAEREGFDLRAELELVLLTADSLRVEVESNPDLTPEEKEELLRQIDKLRERARKRLQ
+  binder_length: 85
+  target_peptide: ELAGIGILTV
+  target_hla: HLA-A*02:01
+  target_pdb: null
+  backbone_pdb: null
+  colabfold_input: sequence-only (ColabFold predicts pMHC de novo; no crystal structure needed)
+  expected_ipae_min_delta: 3.0
+  halt_on_fail: false
+  note: 'iPAE must be > P1_iPAE + 3.0 Ang. Emits WARNING if violated, does not halt.
+
+    '
+  source: BAKER_LAB_2025 Fig 4G (wt1-5 CAR kills RMF-pulsed but not PRAME-pulsed cells)
+- id: N1
+  label: negative
+  description: Scrambled wt1-5 sequence, same AA composition, random order
+  binder_sequence: PPEESERLLIDDESVGQLRVELKLQATLEVEETLKRFRPRALLTLRQVEEETARLALDLERRRNAEDIEAELREVILELYRDESK
+  binder_length: 85
+  target_peptide: RMFPNAPYL
+  target_hla: HLA-A*02:01
+  target_pdb: 3HPJ
+  backbone_pdb: data/targets/3hpj_clean.pdb
+  expected_ipae_min: 15.0
+  halt_on_fail: false
+  note: seed=42 for reproducibility. Script writes generated sequence back into manifest.
+  source: synthesized_by_script
+- id: N2
+  label: negative
+  description: Random 85-residue sequence at natural human proteome AA frequencies
+  binder_sequence: QTSFAHGEVTHPKVLGFMGNVKFYLCADPSKAIYLYTARQLGPDKLVTGLEVTGPNESLSLAHAVTSGATVCLARSDLLGTKELR
+  binder_length: 85
+  target_peptide: RMFPNAPYL
+  target_hla: HLA-A*02:01
+  target_pdb: 3HPJ
+  backbone_pdb: data/targets/3hpj_clean.pdb
+  expected_ipae_min: 20.0
+  halt_on_fail: false
+  note: Length 85 matches wt1-5. seed=42. Script writes generated sequence back into manifest.
+  source: synthesized_by_script
+  aa_frequencies:
+    A: 0.0701
+    C: 0.0228
+    D: 0.0469
+    E: 0.0724
+    F: 0.0391
+    G: 0.0574
+    H: 0.0228
+    I: 0.0555
+    K: 0.0583
+    L: 0.0965
+    M: 0.0241
+    N: 0.0404
+    P: 0.0478
+    Q: 0.0393
+    R: 0.0558
+    S: 0.0714
+    T: 0.0569
+    V: 0.0647
+    W: 0.0129
+    Y: 0.0292

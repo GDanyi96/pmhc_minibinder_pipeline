@@ -1,0 +1,17 @@
+{
+  "mock": true,
+  "panel": ["MART-1", "gp100", "NY-ESO-1", "MAGE-A3", "CMV-pp65", "Influenza-M1"],
+  "matrix": {
+    "design_00000": {
+      "on_target_ipae": 6.4,
+      "MART-1": 11.2,
+      "gp100": 12.8,
+      "NY-ESO-1": 14.1,
+      "MAGE-A3": 13.5,
+      "CMV-pp65": 15.9,
+      "Influenza-M1": 16.3,
+      "min_delta_ipae": 4.8,
+      "passes": true
+    }
+  }
+}

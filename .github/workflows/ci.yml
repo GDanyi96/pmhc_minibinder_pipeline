@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  lint-and-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install project (dev extra)
+        # Use `--extra dev` rather than `--all-extras`: the `colabfold` extra
+        # pulls a git URL with heavy ML deps (~5 GB) and is install-time-
+        # verified only on the pod. CI only needs lint/type/dry-run/pytest.
+        run: uv sync --extra dev
+
+      - name: ruff
+        run: uv run ruff check .
+
+      - name: black --check
+        run: uv run black --check .
+
+      - name: mypy --strict
+        run: uv run mypy --strict workflow/scripts scripts
+
+      - name: snakemake dry-run (mock)
+        run: uv run snakemake --dry-run --config mock=true -j1
+
+      - name: pytest
+        run: uv run pytest -q

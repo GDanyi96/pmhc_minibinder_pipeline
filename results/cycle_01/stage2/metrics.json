@@ -1,0 +1,52 @@
+{
+  "cycle": "01",
+  "stage": "2",
+  "timestamp": "2026-05-17T20:04:23.413855+00:00",
+  "controls": {
+    "P1": {
+      "ipae": 4.8828033088235525,
+      "iplddt": 94.4975294117647,
+      "bsa": 2691.940641363264,
+      "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/P1/P1_unrelaxed_rank_001_alphafold2_multimer_v3_model_1_seed_000.pdb",
+      "scores_json": "results/cycle_01/stage2/colabfold/controls/P1/P1_scores_rank_001_alphafold2_multimer_v3_model_1_seed_000.json",
+      "pass": true
+    },
+    "P2": {
+      "ipae": 4.557618898343053,
+      "iplddt": 95.9471724137931,
+      "bsa": 2787.992703651762,
+      "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/P2/P2_unrelaxed_rank_001_alphafold2_multimer_v3_model_3_seed_000.pdb",
+      "scores_json": "results/cycle_01/stage2/colabfold/controls/P2/P2_scores_rank_001_alphafold2_multimer_v3_model_3_seed_000.json",
+      "pass": true
+    },
+    "P3": {
+      "ipae": 4.543645836516407,
+      "iplddt": 94.20988235294118,
+      "bsa": 2697.7350182988484,
+      "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/P3/P3_unrelaxed_rank_001_alphafold2_multimer_v3_model_3_seed_000.pdb",
+      "scores_json": "results/cycle_01/stage2/colabfold/controls/P3/P3_scores_rank_001_alphafold2_multimer_v3_model_3_seed_000.json",
+      "pass": true
+    },
+    "N1": {
+      "ipae": 24.720349111519603,
+      "iplddt": 34.476588235294116,
+      "bsa": 1524.4984030886408,
+      "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/N1/N1_unrelaxed_rank_001_alphafold2_multimer_v3_model_3_seed_000.pdb",
+      "scores_json": "results/cycle_01/stage2/colabfold/controls/N1/N1_scores_rank_001_alphafold2_multimer_v3_model_3_seed_000.json",
+      "pass": true
+    },
+    "N2": {
+      "ipae": 25.70295818014722,
+      "iplddt": 31.429764705882356,
+      "bsa": 2152.970849756748,
+      "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/N2/N2_unrelaxed_rank_001_alphafold2_multimer_v3_model_3_seed_000.pdb",
+      "scores_json": "results/cycle_01/stage2/colabfold/controls/N2/N2_scores_rank_001_alphafold2_multimer_v3_model_3_seed_000.json",
+      "pass": true
+    }
+  },
+  "halt_gate": {
+    "passed": false,
+    "message": "HALT: P1 ranks 3/5 - scoring pipeline inverted"
+  },
+  "designs": []
+}

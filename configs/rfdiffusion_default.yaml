@@ -1,0 +1,26 @@
+# RFdiffusion defaults for cycle 1.
+# Per HADRUP_JENKINS_2025: noise_scale_ca=0, hotspot-guided, partial diffusion
+# for scaffold reuse from prior winners (BAKER_LAB_2025).
+
+inference:
+  num_designs: 10000
+  ckpt_override_path: /workspace/models/rfdiffusion/Complex_base_ckpt.pt
+
+denoiser:
+  noise_scale_ca: 0       # per HADRUP_JENKINS_2025
+  noise_scale_frame: 0
+
+contigmap:
+  # Filled per-target at runtime from configs/target_*.yaml + binder length range.
+  # Schema: "<target_chains>/0 <binder_len>-<binder_len>"
+  contigs_template: "A1-275/0 B1-99/0 C1-9/0 {binder_min}-{binder_max}"
+
+ppi:
+  # Hotspots passed as list "[A65,A66,A150,A155]" — read from target yaml.
+  hotspot_res_from_target: true
+
+# Partial diffusion (cycle ≥ 2): seed from prior winners, partial_T noise
+partial_diffusion:
+  enabled: false           # toggled on for cycle ≥ 2
+  partial_T: 10            # noise level to repartial from
+  starting_pdbs_glob: "results/cycle_*/winners/*.pdb"
