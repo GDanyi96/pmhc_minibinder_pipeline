@@ -14,10 +14,13 @@ formulas:
   af2_fanin:   "cycle * 1000 + 1000 + fan_in_rank"                    # cycle_02: 3000-3099
 
 reserved:
-  # Cycle 1 ran controls + Stage 2 only (no RFdiffusion); the range is kept
-  # so the snakemake mock end-to-end test, which defaults to --cycle 01,
-  # can still pass.
+  # Cycle 1 ran controls + Stage 2 only in production (no RFdiffusion). The
+  # ranges below are kept so the snakemake mock end-to-end test, which
+  # defaults to --cycle 01, can still exercise the full DAG including the
+  # new stage2_designs rule.
   cycle_01_rfdiffusion: [1000, 1999]
+  cycle_01_proteinmpnn: [1200, 1999]
+  cycle_01_af2_fanin:   [2000, 2099]
   cycle_02_rfdiffusion: [2000, 2199]
   cycle_02_proteinmpnn: [2200, 2999]
   cycle_02_af2_fanin:   [3000, 3099]
