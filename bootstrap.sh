@@ -78,20 +78,82 @@ else
   echo "  WARN: colabfold_batch --help failed; check the colabfold extra install."
 fi
 
-# ─── 5. Model weights (Stage 1; opt-in) ────────────────────────
+# ─── 5. Native tool installs (Stage 1) + model weights (opt-in) ─
 echo
-echo "[5/7] Model weights..."
-if [ "$WITH_RFDIFF_WEIGHTS" -eq 1 ]; then
-  mkdir -p /workspace/models/rfdiffusion /workspace/models/esm2
-  rfdiff_ckpt=/workspace/models/rfdiffusion/Complex_base_ckpt.pt
-  if [ -f "$rfdiff_ckpt" ]; then
-    echo "  RFdiffusion Complex_base_ckpt.pt: already present, skipping"
+echo "[5/7] RFdiffusion clone + weights..."
+
+# RFdiffusion ships as a git repo, not a pip wheel. Clone (or update) under
+# /workspace so run_rfdiffusion.py's hardcoded /workspace/RFdiffusion path
+# resolves. The clone is unconditional (cheap; ~50 MB), the weights are
+# gated by --with-rfdiffusion-weights because the Complex_base_ckpt.pt
+# weight file is ~1.5 GB.
+clone_rfdiffusion() {
+  local dir="${RFDIFFUSION_DIR:-/workspace/RFdiffusion}"
+  if [ -d "$dir/.git" ]; then
+    echo "  RFdiffusion already cloned at $dir — pulling latest..."
+    git -C "$dir" pull --ff-only
   else
-    echo "  TODO: wget RFdiffusion Complex_base_ckpt.pt -> $rfdiff_ckpt"
+    echo "  Cloning RFdiffusion to $dir..."
+    git clone https://github.com/RosettaCommons/RFdiffusion "$dir"
   fi
+}
+clone_rfdiffusion
+
+# Pinned sha256 for Complex_base_ckpt.pt. Self-bootstrapping: leave empty
+# in the initial commit; on first download the script prints the computed
+# value and aborts asking the operator to pin it. Same flow applies in
+# cycle 3 if the upstream checkpoint rotates.
+RFDIFF_CKPT_SHA256="${RFDIFF_CKPT_SHA256:-}"
+# URL scheme note: RFdiffusion README publishes http://files.ipd.uw.edu/...;
+# verify whether https://files.ipd.uw.edu/... resolves before final pin.
+# sha256 verification closes any in-transit integrity gap regardless.
+RFDIFF_CKPT_URL="${RFDIFF_CKPT_URL:-http://files.ipd.uw.edu/pub/RFdiffusion/6f5902ac237024bdd0c176cb93063dc4/Complex_base_ckpt.pt}"
+
+download_rfdiffusion_weights() {
+  local models_dir="${RFDIFFUSION_MODELS_DIR:-/workspace/models/RFdiffusion}"
+  mkdir -p "$models_dir"
+  local ckpt="$models_dir/Complex_base_ckpt.pt"
+
+  if [ -f "$ckpt" ]; then
+    if [ -n "$RFDIFF_CKPT_SHA256" ]; then
+      if echo "${RFDIFF_CKPT_SHA256}  ${ckpt}" | sha256sum -c - >/dev/null 2>&1; then
+        echo "  Complex_base_ckpt.pt: already present, sha256 OK"
+        return 0
+      fi
+      echo "  Complex_base_ckpt.pt: already present but sha256 mismatch — re-downloading"
+      rm -f "$ckpt"
+    else
+      echo "  Complex_base_ckpt.pt: already present, no pinned sha256 to verify"
+      return 0
+    fi
+  fi
+
+  echo "  Downloading Complex_base_ckpt.pt from $RFDIFF_CKPT_URL..."
+  wget -q "$RFDIFF_CKPT_URL" -O "$ckpt"
+
+  if [ -z "$RFDIFF_CKPT_SHA256" ]; then
+    local computed
+    computed=$(sha256sum "$ckpt" | cut -d' ' -f1)
+    echo "FAIL: RFDIFF_CKPT_SHA256 not pinned in bootstrap.sh."
+    echo "Computed value for this download: $computed"
+    echo "Edit bootstrap.sh and set RFDIFF_CKPT_SHA256=\"$computed\", then re-run."
+    exit 1
+  fi
+
+  if ! echo "${RFDIFF_CKPT_SHA256}  ${ckpt}" | sha256sum -c -; then
+    echo "FAIL: Complex_base_ckpt.pt sha256 mismatch — abort"
+    rm -f "$ckpt"
+    exit 1
+  fi
+  echo "  Complex_base_ckpt.pt: downloaded, sha256 verified"
+}
+
+if [ "$WITH_RFDIFF_WEIGHTS" -eq 1 ]; then
+  download_rfdiffusion_weights
+  mkdir -p /workspace/models/esm2
   echo "  TODO: huggingface-cli download facebook/esm2_t33_650M_UR50D -> /workspace/models/esm2/"
 else
-  echo "  Stage 1 / Stage 4 weights skipped (use --with-rfdiffusion-weights to fetch)."
+  echo "  Stage 1 weights + Stage 4 weights skipped (use --with-rfdiffusion-weights to fetch)."
 fi
 
 # ─── 6. Target PDBs (download + clean) ─────────────────────────
