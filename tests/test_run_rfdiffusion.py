@@ -16,6 +16,7 @@ from workflow.scripts.prep_target import (
 from workflow.scripts.run_rfdiffusion import (
     SeedsConfig,
     _build_contigmap,
+    _chain_residue_range,
     _compute_seed,
     _geometry_pass,
 )
@@ -34,16 +35,22 @@ def _write_pdb(path: Path, atoms: list[tuple[str, int, tuple[float, float, float
     path.write_text("\n".join(lines) + "\n")
 
 
-def _make_target(length_min: int = 70, length_max: int = 110) -> ResolvedTarget:
+def _make_target(
+    length_min: int = 70,
+    length_max: int = 110,
+    a_len: int = 5,
+    b_len: int = 3,
+    c_len: int = 9,
+) -> ResolvedTarget:
     return ResolvedTarget(
         target_id="wt1_a0201",
         pdb_id="3HPJ",
         cleaned_pdb="ignored",
         peptide_sequence="RMFPNAPYL",
         chains={
-            "A": ResolvedChain(role="heavy_chain", length=275),
-            "B": ResolvedChain(role="beta2m", length=99),
-            "C": ResolvedChain(role="peptide", length=9),
+            "A": ResolvedChain(role="heavy_chain", length=a_len),
+            "B": ResolvedChain(role="beta2m", length=b_len),
+            "C": ResolvedChain(role="peptide", length=c_len),
             "D": ResolvedChain(role="binder"),
         },
         hotspots={
@@ -74,10 +81,86 @@ def test_build_contigmap_reads_actual_lengths(tmp_path: Path) -> None:
     assert contig == "A1-5/0 B1-3/0 C1-9/0 70-110"
 
 
+def test_chain_residue_range_zero_and_one_indexed(tmp_path: Path) -> None:
+    pdb = tmp_path / "mixed.pdb"
+    atoms: list[tuple[str, int, tuple[float, float, float]]] = []
+    for r in range(1, 6):
+        atoms.append(("A", r, (float(r), 0.0, 0.0)))
+    for r in range(0, 5):
+        atoms.append(("B", r, (0.0, float(r), 0.0)))
+    _write_pdb(pdb, atoms)
+    assert _chain_residue_range(pdb, "A") == (1, 5, 5)
+    assert _chain_residue_range(pdb, "B") == (0, 4, 5)
+
+
+def test_build_contigmap_uses_actual_residue_ranges(tmp_path: Path) -> None:
+    """β2m-style chain B starting at residue 0 must emit B0-<last>/0."""
+    pdb = tmp_path / "b2m_style.pdb"
+    atoms: list[tuple[str, int, tuple[float, float, float]]] = []
+    for r in range(1, 6):
+        atoms.append(("A", r, (float(r), 0.0, 0.0)))
+    for r in range(0, 3):
+        atoms.append(("B", r, (0.0, float(r), 0.0)))
+    for r in range(1, 10):
+        atoms.append(("C", r, (0.0, 0.0, float(r))))
+    _write_pdb(pdb, atoms)
+
+    target = ResolvedTarget(
+        target_id="t",
+        pdb_id="X",
+        cleaned_pdb="ignored",
+        peptide_sequence="RMFPNAPYL",
+        chains={
+            "A": ResolvedChain(role="heavy_chain", length=5),
+            "B": ResolvedChain(role="beta2m", length=3),
+            "C": ResolvedChain(role="peptide", length=9),
+            "D": ResolvedChain(role="binder"),
+        },
+        hotspots={"peptide": [], "mhc": []},
+        binder=BinderRange(length_min=70, length_max=110),
+    )
+    contig = _build_contigmap(target, pdb)
+    assert contig == "A1-5/0 B0-2/0 C1-9/0 70-110"
+
+
+def test_build_contigmap_rejects_length_mismatch(tmp_path: Path) -> None:
+    pdb = tmp_path / "wrong_len.pdb"
+    _write_pdb(pdb, [("A", r, (float(r), 0.0, 0.0)) for r in range(1, 4)])
+    target = _make_target()
+    target.chains["A"] = ResolvedChain(role="heavy_chain", length=999)
+    with pytest.raises(ValueError, match="manifest declares length=999"):
+        _build_contigmap(target, pdb)
+
+
+def test_build_contigmap_real_3hpj_clean_pdb() -> None:
+    """Smoke check against the actual cleaned 3HPJ if it's present."""
+    pdb = Path("data/targets/3hpj_clean.pdb")
+    if not pdb.exists():
+        pytest.skip("data/targets/3hpj_clean.pdb not present in test env")
+    target = ResolvedTarget(
+        target_id="wt1_a0201",
+        pdb_id="3HPJ",
+        cleaned_pdb=str(pdb),
+        peptide_sequence="RMFPNAPYL",
+        chains={
+            "A": ResolvedChain(role="heavy_chain", length=275),
+            "B": ResolvedChain(role="beta2m", length=100),
+            "C": ResolvedChain(role="peptide", length=9),
+            "D": ResolvedChain(role="binder"),
+        },
+        hotspots={"peptide": [], "mhc": []},
+        binder=BinderRange(length_min=70, length_max=110),
+    )
+    contig = _build_contigmap(target, pdb)
+    assert "A1-275/0" in contig
+    assert "B0-99/0" in contig
+    assert "C1-9/0" in contig
+
+
 def test_build_contigmap_rejects_missing_chain(tmp_path: Path) -> None:
     pdb = tmp_path / "incomplete.pdb"
     _write_pdb(pdb, [("A", 1, (0.0, 0.0, 0.0))])  # only chain A
-    target = _make_target()
+    target = _make_target(a_len=1, b_len=1, c_len=1)
     with pytest.raises(ValueError, match="chain B absent"):
         _build_contigmap(target, pdb)
 
