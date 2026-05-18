@@ -231,6 +231,7 @@ results/**
 !results/**/
 !results/**/.gitkeep
 !results/**/metrics.json
+!results/**/metrics_*_baseline.json
 !results/**/*.log
 wandb/
 .snakemake/

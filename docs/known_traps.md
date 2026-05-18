@@ -185,3 +185,48 @@ to ColabFold.
 **Recurrence guard**: `tests/test_splice_binder.py::test_splice_chain_renaming`
 + `test_splice_rejects_input_with_chain_D` assert that the output
 contains exactly A/B/C/D and that the splice rejects malformed inputs.
+
+## Trap #18: bootstrap.sh had the wrong URL hash for `Complex_base_ckpt.pt`
+
+**Symptom**: `bash bootstrap.sh --with-rfdiffusion-weights` reached step 5/7, attempted `wget http://files.ipd.uw.edu/pub/RFdiffusion/6f5902ac237024bdd0c176cb93063dc4/Complex_base_ckpt.pt`, returned exit code 8 (server error), left a 0-byte file at the destination. Re-running just re-attempts the same broken URL.
+
+**Why**: The hash segment `6f5902ac237024bdd0c176cb93063dc4` belongs to `Base_ckpt.pt`, not `Complex_base_ckpt.pt`. The IPD server returns 404 for the mismatched path. wget's default behavior on 404 is silent unless run with `--show-progress` or `-v`. The correct hash for Complex_base_ckpt.pt is `e29311f6f1bf1af907f9ef9f44b8328b` — verified against RFdiffusion's official `scripts/download_models.sh`.
+
+**Fix**: Hotfix commit `fix(bootstrap): correct Complex_base_ckpt.pt URL hash + pin sha256`. URL corrected in `bootstrap.sh`. Sha256 pinned to `76e4e260aefee3b582bd76b77ab95d2592e64f00c51bf344968ab9239f3250bc`. Future pods don't hit this.
+
+**Diagnostic shortcut**: Any time `bootstrap.sh`'s weight-download step exits with code 8 AND leaves a 0-byte file, the URL is wrong (not a network glitch). Verify with `curl -I <url>` before retrying. A 404 response means fix the URL, not the network.
+
+**First observed**: cross-region pod migration, 2026-05-18.
+
+---
+
+## Trap #19: Pod volume vs Network volume confusion in RunPod's new deploy UI
+
+**Symptom**: A pod was deployed with only a Pod volume (e.g., 50 GB) mounted at `/workspace`, no existing network volume attached. The Pod details panel shows "Pod volume, <size>" instead of "Network volume, <size>". Bootstrap would work, but (a) data is lost on pod termination, and (b) the Pod volume is typically too small for the full pipeline (RFdiffusion + ColabFold weights + 200 designs + AF2 outputs need ~30 GB minimum, with no headroom).
+
+**Why**: RunPod's new deployment UI auto-creates a Pod volume by default if no Network volume is selected. The deployment panel's right-side summary toggles between "Network volume will be created" (= new empty volume, bad if you have an existing one) and "Network volume will be attached" (= the existing one). Easy to miss when configuring quickly.
+
+**Verification protocol for future pod deployments**:
+1. In the new RunPod deploy UI, locate the **Network volume** dropdown in the Compute section (between search box and Filter).
+2. Click it → select the existing network volume by name.
+3. Verify the right-side panel changes to show the volume name and "will be attached".
+4. After deployment, immediately verify in the Details tab: should show "Network volume" with the correct size and name. If it shows "Pod volume" — wrong, terminate and redeploy.
+
+**First observed**: cross-region pod migration, 2026-05-18 (pod `attractive_olive_moth`, AP-IN-1, terminated and replaced).
+
+---
+
+## Trap #20: Hardware drift in AF2 numerical outputs across GPU architectures is bounded but real
+
+**Symptom**: Running the same pipeline (same code, same weights, same sha256-pinned dependencies, same inputs) on different GPU architectures produces non-identical AF2-multimer outputs. iPAE drifts by ~±0.5 Å, ipLDDT by ~±5 points, BSA by ~±100 Å² between A100 and H100. The rank-001 model/seed winner can differ.
+
+**Why**: AF2-multimer ensembles 5 models per prediction; the rank-001 winner is decided by predicted-confidence margins tight enough to be flipped by floating-point non-determinism between SM86 (A100) and SM90 (H100). cuDNN heuristics and TF32/BF16 paths also differ. The differences are bounded but real — not a bug, intrinsic to the AF2 ensemble selection process.
+
+**Implication for halt gates**:
+- Bake ≥ 1 Å margin into iPAE-based gates.
+- Bake ≥ 5 ipLDDT points into ipLDDT-based gates.
+- For cross-pan ΔiPAE in Stage 3, the intrinsic noise floor from model selection alone is ~0.3–0.5 Å — design discrimination thresholds need to be > that.
+
+**Validation evidence**: cycle 01 controls re-run, 2026-05-18, A100 SXM US-CA-2 → H100 SXM US-NE-1. Pos↔Neg iPAE gap held at 20.0 Å (threshold ≥10); ipLDDT gap at 59.8 (threshold ≥30). All five controls passed on both hardware. Worst-case positive drift: P2 iPAE +0.34 Å, N2 ipLDDT −4.4 points. See `results/cycle_01/stage2/metrics.json` (H100, canonical) vs `results/cycle_01/stage2/metrics_A100_baseline.json` (A100, sidecar).
+
+**Practical rule**: hardware drift in AF2 numerical outputs is expected and bounded. Cycle 1 had ~2 Å of margin on every halt-relevant dimension; this is the design target for future thresholds.
