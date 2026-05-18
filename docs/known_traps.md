@@ -161,3 +161,27 @@ pin is empty in the initial commit by design**: the first
 asking the operator to pin it. Subsequent runs verify. Same flow applies
 in cycle 3 if the upstream checkpoint rotates -- unset, re-run, capture,
 re-pin. No temporary-code ritual.
+
+## Stage 1 binder lives on chain "A" -- always rename to "D" before AF2
+
+Trap #17. Symptom: AF2 returns an iPAE of garbage (often <2 Å or >40 Å)
+for spliced complexes despite ColabFold reporting a high ranking
+confidence. Compute_metrics happily produces a single number; the halt
+gate may even pass on individual cases. Root cause: Stage 1 writes each
+RFdiffusion-generated binder as a single-chain PDB with chain id "A".
+If that PDB is fed directly to ColabFold alongside an A/B/C cleaned
+pMHC, the multimer assembly gets two chain "A"s collapsed into one
+(ColabFold uses chain ids to determine the asym table), and the binder
+is silently treated as part of the heavy chain. The iPAE then becomes a
+within-chain distance metric -- meaningless.
+
+**Fix**: `workflow/scripts/splice_binder.py` always renames the Stage 1
+chain "A" to "D" while composing the 4-chain complex (A=HC, B=beta2m,
+C=peptide, D=binder) and writes per-chain residue numbering starting at
+1. The Stage 2 designs orchestrator (`scripts/run_stage2.py`) routes
+every Stage 1 PDB through the splice helper -- never pass them directly
+to ColabFold.
+
+**Recurrence guard**: `tests/test_splice_binder.py::test_splice_chain_renaming`
++ `test_splice_rejects_input_with_chain_D` assert that the output
+contains exactly A/B/C/D and that the splice rejects malformed inputs.
