@@ -47,6 +47,19 @@ contracts see `specs/stageN_*.md`.
 | ProteinMPNN via upstream clone at `/workspace/ProteinMPNN`                  | No pip wheel exists for `dauparas/ProteinMPNN`. `bootstrap.sh` clones it; `run_proteinmpnn.py` invokes `protein_mpnn_run.py` via `sys.executable`. Path overridable via `PROTEINMPNN_DIR`. |
 | Dev tools (`ruff`, `black`, `mypy`, `pytest`, `types-PyYAML`) live in `[dev]` | Production `uv sync` stays lean. `bootstrap.sh` and CI use `uv sync --all-extras`. |
 
+## Cycle 1 — Stage 2 — H100 recalibration (2026-05-18)
+
+2026-05-18: Cycle 1 controls re-run on H100 SXM US-NE-1 (pod brief_beige_mole)
+after the unplanned cross-region migration from US-CA-2. All five controls
+pass; halt gate verdict PASS. Positives drift ≤ +0.34 Å iPAE vs A100
+baseline; ipLDDT shifts ≤ 4.4 points; BSA shifts ≤ 664 Å² (N2). metrics.json
+now reflects H100 numbers (canonical). Original A100 numbers preserved as
+metrics_A100_baseline.json sidecar in the same directory. Note: the baseline
+file preserves the historical false-halt verdict from the old rank-based halt
+rule; the underlying numbers passed under the current biology-correct rule.
+Halt gate margin intact: iPAE gap 20.0 Å (threshold ≥10), ipLDDT gap 59.8
+(threshold ≥30). See trap #20 for the GPU-drift envelope.
+
 ## Pointers
 
 - `CLAUDE.md` — rulebook, locked decisions, controls panel summary.

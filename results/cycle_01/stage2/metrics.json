@@ -1,52 +1,52 @@
 {
   "cycle": "01",
   "stage": "2",
-  "timestamp": "2026-05-17T20:04:23.413855+00:00",
+  "timestamp": "2026-05-18T18:22:53.005502+00:00",
   "controls": {
     "P1": {
-      "ipae": 4.8828033088235525,
-      "iplddt": 94.4975294117647,
-      "bsa": 2691.940641363264,
-      "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/P1/P1_unrelaxed_rank_001_alphafold2_multimer_v3_model_1_seed_000.pdb",
-      "scores_json": "results/cycle_01/stage2/colabfold/controls/P1/P1_scores_rank_001_alphafold2_multimer_v3_model_1_seed_000.json",
+      "ipae": 4.838036305147041,
+      "iplddt": 94.17611764705883,
+      "bsa": 2825.621543304067,
+      "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/P1/P1_unrelaxed_rank_001_alphafold2_multimer_v3_model_2_seed_000.pdb",
+      "scores_json": "results/cycle_01/stage2/colabfold/controls/P1/P1_scores_rank_001_alphafold2_multimer_v3_model_2_seed_000.json",
       "pass": true
     },
     "P2": {
-      "ipae": 4.557618898343053,
-      "iplddt": 95.9471724137931,
-      "bsa": 2787.992703651762,
-      "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/P2/P2_unrelaxed_rank_001_alphafold2_multimer_v3_model_3_seed_000.pdb",
-      "scores_json": "results/cycle_01/stage2/colabfold/controls/P2/P2_scores_rank_001_alphafold2_multimer_v3_model_3_seed_000.json",
+      "ipae": 4.898426690550807,
+      "iplddt": 94.55096551724138,
+      "bsa": 2714.5498674461123,
+      "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/P2/P2_unrelaxed_rank_001_alphafold2_multimer_v3_model_5_seed_000.pdb",
+      "scores_json": "results/cycle_01/stage2/colabfold/controls/P2/P2_scores_rank_001_alphafold2_multimer_v3_model_5_seed_000.json",
       "pass": true
     },
     "P3": {
-      "ipae": 4.543645836516407,
-      "iplddt": 94.20988235294118,
-      "bsa": 2697.7350182988484,
+      "ipae": 4.524669671505006,
+      "iplddt": 94.64188235294118,
+      "bsa": 2651.209386842893,
       "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/P3/P3_unrelaxed_rank_001_alphafold2_multimer_v3_model_3_seed_000.pdb",
       "scores_json": "results/cycle_01/stage2/colabfold/controls/P3/P3_scores_rank_001_alphafold2_multimer_v3_model_3_seed_000.json",
       "pass": true
     },
     "N1": {
-      "ipae": 24.720349111519603,
-      "iplddt": 34.476588235294116,
-      "bsa": 1524.4984030886408,
+      "ipae": 24.930818321078565,
+      "iplddt": 34.43458823529412,
+      "bsa": 1600.7654953822785,
       "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/N1/N1_unrelaxed_rank_001_alphafold2_multimer_v3_model_3_seed_000.pdb",
       "scores_json": "results/cycle_01/stage2/colabfold/controls/N1/N1_scores_rank_001_alphafold2_multimer_v3_model_3_seed_000.json",
       "pass": true
     },
     "N2": {
-      "ipae": 25.70295818014722,
-      "iplddt": 31.429764705882356,
-      "bsa": 2152.970849756748,
-      "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/N2/N2_unrelaxed_rank_001_alphafold2_multimer_v3_model_3_seed_000.pdb",
-      "scores_json": "results/cycle_01/stage2/colabfold/controls/N2/N2_scores_rank_001_alphafold2_multimer_v3_model_3_seed_000.json",
+      "ipae": 26.65109803921577,
+      "iplddt": 27.041529411764706,
+      "bsa": 1488.5576850376383,
+      "rank_001_pdb": "results/cycle_01/stage2/colabfold/controls/N2/N2_unrelaxed_rank_001_alphafold2_multimer_v3_model_5_seed_000.pdb",
+      "scores_json": "results/cycle_01/stage2/colabfold/controls/N2/N2_scores_rank_001_alphafold2_multimer_v3_model_5_seed_000.json",
       "pass": true
     }
   },
   "halt_gate": {
-    "passed": false,
-    "message": "HALT: P1 ranks 3/5 - scoring pipeline inverted"
+    "passed": true,
+    "message": ""
   },
   "designs": []
 }
