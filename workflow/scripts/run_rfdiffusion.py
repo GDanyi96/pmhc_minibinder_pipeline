@@ -85,6 +85,27 @@ RFDIFFUSION_MODELS_DIR = Path(
 )
 
 
+def _resolve_rfdiffusion_python() -> str:
+    """Return the SE3nv conda interpreter path for RFdiffusion inference.
+
+    PROJECT_STATE.md §6 rule 4: pipeline scripts use uv, RFdiffusion uses
+    SE3nv. RFdiffusion's deps (omegaconf, hydra, e3nn, dgl, SE3Transformer,
+    torch 1.9+cu111) are not in the uv venv, so launching via `uv run`
+    dies with ModuleNotFoundError.
+    """
+    path = os.environ.get(
+        "RFDIFFUSION_PYTHON",
+        "/workspace/miniconda3/envs/SE3nv/bin/python",
+    )
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"RFDIFFUSION_PYTHON not found: {path}. "
+            "Install SE3nv conda env and overlay torch==1.9.0+cu111 "
+            "(see PROJECT_STATE.md §9 steps 3-5)."
+        )
+    return path
+
+
 class SeedsConfig(BaseModel):
     formulas: dict[str, str]
     reserved: dict[str, list[int]]
@@ -360,10 +381,9 @@ def _file_sha256(path: Path) -> str:
 def _run_inference_per_design(
     out_dir: Path, contig: str, hotspot_tokens: list[str], seed: int, ckpt: Path
 ) -> None:
+    rfdiffusion_python = _resolve_rfdiffusion_python()
     cmd = [
-        "uv",
-        "run",
-        "python",
+        rfdiffusion_python,
         str(RFDIFFUSION_DIR / "scripts" / "run_inference.py"),
         f"inference.output_prefix={out_dir}/design",
         "inference.num_designs=1",
@@ -374,6 +394,8 @@ def _run_inference_per_design(
         "denoiser.noise_scale_frame=0",
         f"inference.random_seed={seed}",
     ]
+    logger.info(f"Launching RFdiffusion with interpreter: {rfdiffusion_python}")
+    logger.info(f"Full cmd: {cmd}")
     subprocess.run(cmd, check=True, env={**os.environ})
 
 
@@ -385,10 +407,9 @@ def _run_inference_single_batch(
     num_designs: int,
     ckpt: Path,
 ) -> None:
+    rfdiffusion_python = _resolve_rfdiffusion_python()
     cmd = [
-        "uv",
-        "run",
-        "python",
+        rfdiffusion_python,
         str(RFDIFFUSION_DIR / "scripts" / "run_inference.py"),
         f"inference.output_prefix={out_dir}/design",
         f"inference.num_designs={num_designs}",
@@ -399,6 +420,8 @@ def _run_inference_single_batch(
         "denoiser.noise_scale_frame=0",
         f"inference.random_seed={base_seed}",
     ]
+    logger.info(f"Launching RFdiffusion with interpreter: {rfdiffusion_python}")
+    logger.info(f"Full cmd: {cmd}")
     subprocess.run(cmd, check=True, env={**os.environ})
 
 
