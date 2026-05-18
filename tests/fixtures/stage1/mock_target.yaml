@@ -1,0 +1,59 @@
+cycle: '99'
+mock: true
+primary: &id001
+  target_id: wt1_a0201
+  pdb_id: 3HPJ
+  cleaned_pdb: /home/user/pmhc_minibinder_pipeline/tests/fixtures/stage1/mock_clean.pdb
+  peptide_sequence: RMFPNAPYL
+  chains:
+    A:
+      role: heavy_chain
+      length: 4
+    B:
+      role: beta2m
+      length: 2
+    C:
+      role: peptide
+      length: 9
+    D:
+      role: binder
+      length: null
+  hotspots:
+    peptide:
+    - token: C1
+      chain: C
+      resnum_clean: 1
+      resnum_rcsb: 1
+    - token: C4
+      chain: C
+      resnum_clean: 4
+      resnum_rcsb: 4
+    - token: C6
+      chain: C
+      resnum_clean: 6
+      resnum_rcsb: 6
+    - token: C8
+      chain: C
+      resnum_clean: 8
+      resnum_rcsb: 8
+    mhc:
+    - token: A65
+      chain: A
+      resnum_clean: 65
+      resnum_rcsb: 65
+    - token: A66
+      chain: A
+      resnum_clean: 66
+      resnum_rcsb: 66
+    - token: A150
+      chain: A
+      resnum_clean: 150
+      resnum_rcsb: 150
+    - token: A155
+      chain: A
+      resnum_clean: 155
+      resnum_rcsb: 155
+  binder:
+    length_min: 70
+    length_max: 110
+positive_control: *id001

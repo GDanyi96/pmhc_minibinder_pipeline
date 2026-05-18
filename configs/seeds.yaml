@@ -10,5 +10,6 @@
 formula: "cycle * 1000 + design_index"
 
 reserved:
-  cycle_01: [1000, 1999]   # unused — cycle 1 ran controls + Stage 2 only, no RFdiffusion
+  cycle_01: [1000, 1999]   # unused -- cycle 1 ran controls + Stage 2 only, no RFdiffusion
   cycle_02: [2000, 2199]   # 200 designs
+  cycle_99: [99000, 99999] # mock smoke tests (`--cycle 99`); not a real cycle

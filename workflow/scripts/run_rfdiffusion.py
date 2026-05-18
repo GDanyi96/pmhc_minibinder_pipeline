@@ -491,7 +491,7 @@ def run_rfdiffusion(
     summary: dict[str, Any] = {
         "cycle": cycle,
         "target_id": target.target_id,
-        "n_attempted": num_designs,
+        "n_attempted": effective_designs,
         "n_completed": n_completed,
         "n_geometry_pass": n_pass,
         "fraction_geometry_pass": fraction,
