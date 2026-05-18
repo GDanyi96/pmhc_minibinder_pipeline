@@ -163,9 +163,7 @@ def _chain_residue_range(cleaned_pdb: Path, chain_id: str) -> tuple[int, int, in
     model = structure[0]
     if chain_id not in model:
         raise ValueError(f"{cleaned_pdb}: chain {chain_id} absent")
-    resnums = [
-        r.id[1] for r in model[chain_id].get_residues() if r.id[0].strip() == ""
-    ]
+    resnums = [r.id[1] for r in model[chain_id].get_residues() if r.id[0].strip() == ""]
     if not resnums:
         raise ValueError(f"{cleaned_pdb}: no standard residues in chain {chain_id}")
     return resnums[0], resnums[-1], len(resnums)
