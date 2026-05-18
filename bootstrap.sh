@@ -77,7 +77,7 @@ fi
 # Self-bootstrapping: leave empty in the initial commit; on first run the
 # script prints the computed value and aborts asking the operator to pin
 # it. Same flow applies when upstream rotates the weight.
-PROTEINMPNN_CKPT_SHA256="${PROTEINMPNN_CKPT_SHA256:-}"
+PROTEINMPNN_CKPT_SHA256="${PROTEINMPNN_CKPT_SHA256:-c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd}"
 verify_proteinmpnn_weight() {
   local ckpt="$PROTEINMPNN_DIR/vanilla_model_weights/v_48_020.pt"
   if [ ! -f "$ckpt" ]; then
