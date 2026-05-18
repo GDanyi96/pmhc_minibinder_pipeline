@@ -65,13 +65,15 @@ One-line description per tracked file. New file? Add a line here.
 - `scripts/__init__.py` — Marks scripts as a package.
 - `scripts/generate_negatives.py` — Deterministic N1/N2 binder sequences (seed=42).
 - `scripts/run_controls.py` — Stage 2 Part A controls orchestrator + halt gate.
+- `scripts/run_stage1.py` — Stage 1 RFdiffusion orchestrator + geometry-pass halt gate.
 
 ## configs/
 
-- `configs/target_wt1_a0201.yaml` — Locked primary target spec (chains, hotspots).
+- `configs/target_wt1_a0201.yaml` — Locked primary target spec (chains, hotspots, length range 70-110).
 - `configs/target_2bnr_a0201.yaml` — Positive-control target spec (Jenkins NY1-B04 / 2BNR).
 - `configs/thresholds.yaml` — All numerical filter thresholds (iPAE, ipLDDT, NLL, etc).
-- `configs/rfdiffusion_default.yaml` — RFdiffusion noise scaling, hotspots, contig schema.
+- `configs/rfdiffusion_default.yaml` — RFdiffusion noise scaling, num_designs, partial_T (contigmap built at runtime).
+- `configs/seeds.yaml` — Stage 1 seed formula (`cycle * 1000 + design_index`) + per-cycle reserved ranges.
 - `configs/proteinmpnn_chains.json` — Per-PDB chain assignment for ProteinMPNN complex mode.
 
 ## data/
@@ -88,9 +90,17 @@ One-line description per tracked file. New file? Add a line here.
 
 - `tests/__init__.py` — Marks tests as a package.
 - `tests/test_dry_run.py` — Asserts `snakemake --dry-run --config mock=true -j1` exits 0.
+- `tests/test_halt_gate.py` — Stage 2 controls halt-gate unit tests.
+- `tests/test_compute_metrics.py` — Stage 2 metrics computation tests.
+- `tests/test_run_rfdiffusion.py` — Stage 1 helper unit tests (contigmap, seeds, geometry pass).
+- `tests/test_stage1_halt_gate.py` — Stage 1 orchestrator + halt-gate tests (pass + fail paths).
 - `tests/fixtures/target_3hpj_clean.pdb` — 1-line ATOM stub for stage 0 primary.
 - `tests/fixtures/target_2bnr_clean.pdb` — 1-line ATOM stub for stage 0 positive control.
-- `tests/fixtures/rfdiffusion/sample.pdb` — Stage 1 stub backbone.
+- `tests/fixtures/rfdiffusion/sample.pdb` — Stage 1 cycle-1 stub backbone (legacy).
+- `tests/fixtures/stage1/_make_fixtures.py` — Deterministic generator for the Stage 1 mock fixtures.
+- `tests/fixtures/stage1/mock_clean.pdb` — Synthetic cleaned PDB with all 8 hotspot Ca residues.
+- `tests/fixtures/stage1/mock_target.yaml` — Pre-built TargetManifest for Stage 1 mock smoke tests.
+- `tests/fixtures/stage1/mock_design_NNNNN.pdb` — 10 mock backbones (8 pass / 2 fail at threshold 0.50).
 - `tests/fixtures/proteinmpnn/sample.fasta` — Stage 2a stub sequence.
 - `tests/fixtures/colabfold/sample.pdb` — Stage 2b stub structure.
 - `tests/fixtures/colabfold/sample_scores.json` — Stage 2b stub PAE/pLDDT.

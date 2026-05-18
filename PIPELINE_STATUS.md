@@ -9,8 +9,8 @@ contracts see `specs/stageN_*.md`.
 | Stage | Scope                                | State                  |
 |-------|--------------------------------------|------------------------|
 | 0     | Target prep (clean PDB, hotspots)    | scaffolded             |
-| 1     | RFdiffusion backbones                | stub (real run blocked on Stage 1 native install) |
-| 2     | ProteinMPNN + AF2-multimer + controls | **mock-CI green; real-run rewired to native install (this PR)** |
+| 1     | RFdiffusion backbones                | **mock-CI green; real-run ready (native driver + weights gated behind `--with-rfdiffusion-weights`)** |
+| 2     | ProteinMPNN + AF2-multimer + controls | mock-CI green; real-run rewired to native install (cycle 1) |
 | 3     | Cross-pan off-target grid            | not started            |
 | 4     | ESM-2 embeddings + FPS               | not started            |
 | 5     | LightGBM + GP active learning        | not started            |
@@ -26,12 +26,16 @@ contracts see `specs/stageN_*.md`.
 
 ## Real-run status
 
-- **Stage 2** real run on the RunPod A100 pod previously failed because
-  `run_colabfold.py` and `run_proteinmpnn.py` shelled out to
-  `docker run …`, and the pod has no Docker (`bash: docker: command not
-  found`). This PR replaces both with native subprocess calls.
-- Stage 1 (RFdiffusion) remains Docker-based in code; rewiring is queued as
-  a follow-up. Spec text is already aligned in this PR.
+- **Stage 2** real run was rewired to native install in cycle 1
+  (`run_colabfold.py` and `run_proteinmpnn.py` shell out natively; no
+  Docker).
+- **Stage 1** (RFdiffusion) is now native too: `workflow/scripts/run_rfdiffusion.py`
+  shells out to `/workspace/RFdiffusion/scripts/run_inference.py` via a
+  module-level `_SEED_THREADING_MODE` constant (defaulting to the safe
+  per-design subprocess pattern; the operator flips to
+  `single_subprocess` after the zero-LOC pod recon documented in the
+  module docstring). Weights are gated behind
+  `bootstrap.sh --with-rfdiffusion-weights` with sha256 verification.
 
 ## Locked architectural decisions
 
