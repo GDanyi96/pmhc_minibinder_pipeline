@@ -1,10 +1,24 @@
 # mypy: disable-error-code="no-untyped-call,attr-defined,no-any-return,misc"
 """Stage 2c — iPAE, ipLDDT, and BSA computation from ColabFold outputs.
 
-iPAE definition (HADRUP_JENKINS_2025 Fig 1B): symmetric mean PAE between
-chain D (binder) and chains A+B+C (HC + beta2m + peptide).
+Two metric flavors live here:
 
-ipLDDT definition: mean pLDDT over chain D residues.
+* Position-slice iPAE/ipLDDT (``compute_ipae``/``compute_iplddt``/
+  ``metrics_for_control``) — the cycle-1 controls' calibrated path.
+  iPAE is the symmetric mean PAE over the full D <-> A+B+C submatrix;
+  ipLDDT is the mean pLDDT over chain D residues. Fast, no PDB
+  geometry, no interface threshold.
+
+* Canonical heavy-atom interface iPAE/ipLDDT
+  (``compute_ipae_interface``/``compute_iplddt_interface``/
+  ``metrics_for_design``) — HADRUP_JENKINS_2025 Fig 1B operational
+  definition: iPAE = mean min(pae_ij, pae_ji) over residue pairs where
+  one residue is on chain D, the other on chains A/B/C, and the
+  heavy-atom min distance is <= 8 A. ipLDDT = mean pLDDT over residues
+  that touch the interface from either side. The new Stage 2 designs
+  pipeline (``scripts/run_stage2.py``) routes real-mode predictions
+  through this canonical path; the controls pipeline keeps the slice
+  path to preserve cycle-1 calibration.
 
 BSA: SASA(pMHC) + SASA(binder) - SASA(complex) via freesasa default
 Lee-Richards. Splits the complex PDB into A+B+C and D-only temporary PDBs
@@ -22,11 +36,13 @@ import argparse
 import json
 import sys
 import tempfile
+from collections.abc import Sequence
 from glob import glob
 from pathlib import Path
 from typing import Any
 
 import freesasa
+import numpy as np
 from Bio.PDB import PDBIO, PDBParser, Select
 from Bio.PDB.Chain import Chain
 from Bio.PDB.Structure import Structure
@@ -150,6 +166,165 @@ def find_artifact(directory: Path, pattern: str) -> Path:
     if not matches:
         raise FileNotFoundError(f"no file matching {pattern!r} under {directory}")
     return matches[0]
+
+
+def chain_ids_per_residue(pdb_path: Path) -> np.ndarray:
+    """Return an array of chain ids in PDB residue iteration order.
+
+    Matches the row/column ordering of ColabFold's PAE matrix and the
+    pLDDT array — both follow Bio.PDB iteration order on the rank_001
+    PDB. HETATM/water residues are dropped.
+    """
+    parser = PDBParser(QUIET=True)
+    structure: Structure = parser.get_structure(pdb_path.stem, str(pdb_path))
+    model = structure[0]
+    ids: list[str] = []
+    for chain in model.get_chains():
+        for residue in chain.get_residues():
+            if residue.id[0].strip() == "":
+                ids.append(chain.id)
+    return np.asarray(ids, dtype="<U1")
+
+
+def load_plddt_from_pdb(pdb_path: Path) -> np.ndarray:
+    """Per-residue pLDDT from the CA B-factor column of an AF2 PDB.
+
+    AF2 / ColabFold encode pLDDT in the B-factor field of every atom of
+    a residue; we read the CA atom. Residues lacking CA fall back to the
+    first heavy atom's B-factor, which keeps the array length aligned
+    with the PAE matrix even for pathological inputs.
+    """
+    parser = PDBParser(QUIET=True)
+    structure: Structure = parser.get_structure(pdb_path.stem, str(pdb_path))
+    model = structure[0]
+    values: list[float] = []
+    for chain in model.get_chains():
+        for residue in chain.get_residues():
+            if residue.id[0].strip() != "":
+                continue
+            if "CA" in residue:
+                values.append(float(residue["CA"].get_bfactor()))
+                continue
+            first = next(iter(residue.get_atoms()), None)
+            values.append(float(first.get_bfactor()) if first is not None else 0.0)
+    return np.asarray(values, dtype=np.float64)
+
+
+def compute_heavy_atom_distances(pdb_path: Path) -> np.ndarray:
+    """Pairwise residue-residue min heavy-atom distance, shape (N, N).
+
+    Residue order matches ``chain_ids_per_residue``. Hydrogens are
+    excluded via ``atom.element != "H"``. Diagonal is 0; residues with
+    no heavy atoms keep +inf rows/cols.
+    """
+    parser = PDBParser(QUIET=True)
+    structure: Structure = parser.get_structure(pdb_path.stem, str(pdb_path))
+    model = structure[0]
+    residue_coords: list[np.ndarray] = []
+    for chain in model.get_chains():
+        for residue in chain.get_residues():
+            if residue.id[0].strip() != "":
+                continue
+            coords = [a.get_coord() for a in residue.get_atoms() if a.element != "H"]
+            if coords:
+                residue_coords.append(np.asarray(coords, dtype=np.float64))
+            else:
+                residue_coords.append(np.zeros((0, 3), dtype=np.float64))
+    n = len(residue_coords)
+    distances = np.full((n, n), np.inf, dtype=np.float64)
+    for i in range(n):
+        ai = residue_coords[i]
+        if ai.shape[0] == 0:
+            continue
+        for j in range(i, n):
+            aj = residue_coords[j]
+            if aj.shape[0] == 0:
+                continue
+            d = float(np.linalg.norm(ai[:, None, :] - aj[None, :, :], axis=-1).min())
+            distances[i, j] = d
+            distances[j, i] = d
+    np.fill_diagonal(distances, 0.0)
+    return distances
+
+
+def _interface_mask(
+    chain_ids: np.ndarray,
+    distances: np.ndarray,
+    binder: str,
+    target: Sequence[str],
+    thr: float,
+) -> np.ndarray:
+    binder_mask = chain_ids == binder
+    target_mask = np.isin(chain_ids, list(target))
+    cross = binder_mask[:, None] & target_mask[None, :]
+    return cross & (distances <= thr)
+
+
+def compute_ipae_interface(
+    pae: list[list[float]] | np.ndarray,
+    chain_ids: np.ndarray,
+    distances: np.ndarray,
+    binder: str = "D",
+    target: Sequence[str] = ("A", "B", "C"),
+    thr: float = 8.0,
+) -> float:
+    """Canonical iPAE: mean min(pae_ij, pae_ji) over D <-> A/B/C residue
+    pairs whose heavy-atom min distance is <= ``thr`` (8 A default).
+
+    Returns +inf when no interface exists — signals a failed design.
+    """
+    pae_arr = np.asarray(pae, dtype=np.float64)
+    mask = _interface_mask(chain_ids, distances, binder, target, thr)
+    if not mask.any():
+        return float("inf")
+    combined = np.minimum(pae_arr, pae_arr.T)
+    return float(np.mean(combined[mask]))
+
+
+def compute_iplddt_interface(
+    plddt: list[float] | np.ndarray,
+    chain_ids: np.ndarray,
+    distances: np.ndarray,
+    binder: str = "D",
+    target: Sequence[str] = ("A", "B", "C"),
+    thr: float = 8.0,
+) -> float:
+    """Mean pLDDT over residues that touch the binder<->target interface
+    (rows OR columns of the interface mask). Returns 0.0 when no
+    interface exists — pairs with iPAE=+inf to mark a failed design.
+    """
+    plddt_arr = np.asarray(plddt, dtype=np.float64)
+    mask = _interface_mask(chain_ids, distances, binder, target, thr)
+    if not mask.any():
+        return 0.0
+    touched = mask.any(axis=1) | mask.any(axis=0)
+    return float(np.mean(plddt_arr[touched]))
+
+
+def metrics_for_design(pred_dir: Path) -> dict[str, Any]:
+    """Canonical metrics for one Stage 2 designs AF2 prediction.
+
+    Reads the rank_001 PDB (chain ids, heavy-atom geometry, CA B-factor
+    pLDDT) and the scores JSON (PAE matrix); routes through the
+    interface-mask iPAE/ipLDDT. BSA computation is shared with the
+    controls path.
+    """
+    scores_json = find_artifact(pred_dir, DEFAULT_SCORES_GLOB)
+    rank_pdb = find_artifact(pred_dir, DEFAULT_PDB_GLOB)
+    pae = load_pae(scores_json)
+    chain_ids = chain_ids_per_residue(rank_pdb)
+    distances = compute_heavy_atom_distances(rank_pdb)
+    plddt = load_plddt_from_pdb(rank_pdb)
+    ipae = compute_ipae_interface(pae, chain_ids, distances)
+    iplddt = compute_iplddt_interface(plddt, chain_ids, distances)
+    bsa = compute_bsa(rank_pdb)
+    return {
+        "ipae": ipae,
+        "iplddt": iplddt,
+        "bsa": bsa,
+        "rank_001_pdb": str(rank_pdb),
+        "scores_json": str(scores_json),
+    }
 
 
 def metrics_for_control(colabfold_dir: Path, backbone_pdb: Path | None) -> dict[str, Any]:

@@ -230,3 +230,93 @@ contains exactly A/B/C/D and that the splice rejects malformed inputs.
 **Validation evidence**: cycle 01 controls re-run, 2026-05-18, A100 SXM US-CA-2 → H100 SXM US-NE-1. Pos↔Neg iPAE gap held at 20.0 Å (threshold ≥10); ipLDDT gap at 59.8 (threshold ≥30). All five controls passed on both hardware. Worst-case positive drift: P2 iPAE +0.34 Å, N2 ipLDDT −4.4 points. See `results/cycle_01/stage2/metrics.json` (H100, canonical) vs `results/cycle_01/stage2/metrics_A100_baseline.json` (A100, sidecar).
 
 **Practical rule**: hardware drift in AF2 numerical outputs is expected and bounded. Cycle 1 had ~2 Å of margin on every halt-relevant dimension; this is the design target for future thresholds.
+
+---
+
+## Trap #21: Skip `--use-gpu-relax` during Stage 2 AF2 triage
+
+**Symptom**: `colabfold_batch` spends 30–50 % of its wall time on AMBER
+relaxation that does not change iPAE/ipLDDT ranking on binder triage runs.
+At cycle 02's 50-prediction fan-in this can add ~45 min of pure overhead
+without affecting which designs survive the halt gate.
+
+**Why**: Baker lab's `pmhc_fold.py` runs `do_relax=False` during
+high-throughput screening for exactly this reason — the relax step is a
+post-hoc geometry polish, useful for final structure inspection but
+noise vs. ranking signal during triage.
+
+**Fix**: `workflow/scripts/run_colabfold.py:run_real` and the inline
+`_run_real_colabfold` in `scripts/run_stage2.py` both omit
+`--use-gpu-relax`. Apply AMBER relax only to the cycle 03+ top survivors
+if BSA precision becomes a bottleneck.
+
+---
+
+## Trap #22: ProteinMPNN `.fa` files start with the original input sequence
+
+**Symptom**: Stage 2 aggregator emits `n_seqs_per_backbone + 1` records
+per design instead of `n_seqs_per_backbone`, contaminating the fan-in
+ranking with a non-designed sequence at the top.
+
+**Why**: Upstream `dauparas/ProteinMPNN` writes each `.fa` file with the
+fixed-scaffold input as the first record (e.g. header containing
+`fixed_chains=['A','B','C']`, no `sample=` field), followed by the
+sampled designs (`T=0.1, sample=1, ...`, etc.). The first record is for
+provenance, not a design.
+
+**Fix**: `workflow/scripts/aggregate_mpnn_outputs.aggregate` always
+skips `fasta_records[0]` and starts at `[1:]`. The unit test
+`test_aggregate_skips_scaffold_record` is the recurrence guard.
+
+---
+
+## Trap #23: ProteinMPNN outputs the **full complex** sequence per record
+
+**Symptom**: Stage 2 sequences.jsonl carries 200+-residue sequences for
+each "design" when binder length is supposed to be 70–110.
+
+**Why**: ProteinMPNN's `.fa` body contains the entire input PDB's
+chain-concatenated sequence in PDB chain order, regardless of which
+chains were fixed vs. designed. Chains A/B/C are returned verbatim
+(native sequence); only chain D contains designed residues. The
+aggregator must slice the binder portion.
+
+**Fix**: `workflow/scripts/aggregate_mpnn_outputs.aggregate` accepts
+optional `binder_length` per design (joined from Stage 1's
+`designs.jsonl`) and slices `seq[-binder_length:]`. The unit test
+`test_aggregate_slices_binder_when_binder_length_provided` is the
+recurrence guard.
+
+---
+
+## Trap #24: ColabFold multimer FASTA is colon-separated within a single record
+
+**Symptom**: `colabfold_batch` silently treats a multi-record FASTA as
+independent monomer inputs; the resulting per-id PDBs have only one
+chain and iPAE is undefined / garbage.
+
+**Why**: ColabFold's multimer convention differs from DeepMind's original
+AF2-Multimer format. ColabFold expects exactly one `>id\n` header per
+record, with chains in the body separated by `:`. No trailing colon.
+Example: `>design_00042_seq01\nGSHSM...:IQRTPK...:RMFPNAPYL:MAEEL...\n`.
+
+**Fix**: `scripts/run_stage2.py:_build_multimer_fasta` writes a single
+record with `":".join((A, B, C, binder))` and asserts no trailing colon
+in `tests/test_run_stage2.py::test_build_multimer_fasta_colon_separated_single_record`.
+
+---
+
+## Trap #25: `parse_multiple_chains.py` reads every file under `--input_path`
+
+**Symptom**: ProteinMPNN errors mid-batch with "no atoms found" or
+similar, or includes stale PDBs from prior cycles in the run.
+
+**Why**: Upstream's helper script does a directory walk — no extension
+filter, no manifest. Anything under `--input_path` (Snakemake markers,
+`.ipynb_checkpoints/`, accidentally-copied unrelated PDBs) is parsed
+and either crashes the script or pollutes the JSONL.
+
+**Fix**: `scripts/run_stage2.py:_stage_input_pdbs` always symlinks the
+intended spliced PDBs into a fresh `input_pdbs/` directory under the
+per-cycle MPNN work dir, then points `--input_path` at it. Idempotent:
+the directory is removed and recreated on each call.

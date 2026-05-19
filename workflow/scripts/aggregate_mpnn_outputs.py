@@ -31,8 +31,11 @@ _MPNN_FORMULA = "cycle * 1000 + 200 + design_index * 4 + seq_index"
 _AF2_FORMULA = "cycle * 1000 + 1000 + fan_in_rank"
 
 _FLOAT = r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?"
-_SCORE_RE = re.compile(rf"score=({_FLOAT})")
+_SCORE_RE = re.compile(rf"(?<!global_)score=({_FLOAT})")
 _NLL_RE = re.compile(rf"nll=({_FLOAT})")
+_GLOBAL_SCORE_RE = re.compile(rf"global_score=({_FLOAT})")
+_SAMPLE_RE = re.compile(r"sample=(\d+)")
+_SEQ_RECOVERY_RE = re.compile(rf"seq_recovery=({_FLOAT})")
 
 
 class _Seeds(BaseModel):
@@ -87,7 +90,8 @@ def _parse_score(header: str) -> float:
     """Extract the per-residue NLL score from a ProteinMPNN FASTA header.
 
     Prefers the real-format `score=N` field; falls back to the mock-format
-    `nll=N`. Raises if neither is present.
+    `nll=N`. Raises if neither is present. The negative lookbehind in
+    ``_SCORE_RE`` keeps ``global_score=`` from being matched here.
     """
     m = _SCORE_RE.search(header)
     if m is None:
@@ -95,6 +99,16 @@ def _parse_score(header: str) -> float:
     if m is None:
         raise ValueError(f"FASTA header missing score=/nll= field: {header!r}")
     return float(m.group(1))
+
+
+def _parse_optional_float(pattern: re.Pattern[str], header: str) -> float | None:
+    m = pattern.search(header)
+    return float(m.group(1)) if m is not None else None
+
+
+def _parse_optional_int(pattern: re.Pattern[str], header: str) -> int | None:
+    m = pattern.search(header)
+    return int(m.group(1)) if m is not None else None
 
 
 def _parse_fasta(fasta_path: Path) -> list[tuple[str, str]]:
@@ -125,7 +139,7 @@ def _parse_fasta(fasta_path: Path) -> list[tuple[str, str]]:
 
 def aggregate(
     per_design_fastas: list[Path],
-    design_records: list[dict[str, str | int]],
+    design_records: list[dict[str, str | int | None]],
     cycle: int,
     seeds: _Seeds,
     out_jsonl: Path,
@@ -134,8 +148,11 @@ def aggregate(
 
     `design_records[i]` corresponds to the i-th element of
     `per_design_fastas`; must carry at least `design_id`, `backbone_pdb`,
-    `spliced_pdb`. ProteinMPNN's first FASTA record (the fixed scaffold)
-    is skipped; only sampled designs go into the output.
+    `spliced_pdb`. Optional `binder_length`: when present, the last N
+    residues of each sampled sequence are kept (real ProteinMPNN emits
+    the full A+B+C+D complex per record — trap #6). When absent (mock),
+    the sequence is written verbatim. ProteinMPNN's first FASTA record
+    (the fixed scaffold) is always skipped — trap #5.
     """
     if len(per_design_fastas) != len(design_records):
         raise ValueError(
@@ -147,12 +164,18 @@ def aggregate(
         for design_index, (fasta_path, design_record) in enumerate(
             zip(per_design_fastas, design_records, strict=True)
         ):
+            binder_length_raw = design_record.get("binder_length")
+            binder_length: int | None = (
+                int(binder_length_raw) if isinstance(binder_length_raw, int) else None
+            )
             fasta_records = _parse_fasta(fasta_path)
             samples = fasta_records[1:]
             for seq_index, (header, seq) in enumerate(samples):
+                if binder_length is not None and len(seq) >= binder_length:
+                    seq = seq[-binder_length:]
                 nll = _parse_score(header)
                 seed = _compute_mpnn_seed(cycle, design_index, seq_index, seeds)
-                out_record = {
+                out_record: dict[str, object] = {
                     "design_id": str(design_record["design_id"]),
                     "seq_id": seq_index,
                     "seq": seq,
@@ -161,5 +184,14 @@ def aggregate(
                     "backbone_pdb": str(design_record["backbone_pdb"]),
                     "spliced_pdb": str(design_record["spliced_pdb"]),
                 }
+                global_score = _parse_optional_float(_GLOBAL_SCORE_RE, header)
+                if global_score is not None:
+                    out_record["mpnn_global_score"] = global_score
+                sample = _parse_optional_int(_SAMPLE_RE, header)
+                if sample is not None:
+                    out_record["mpnn_sample"] = sample
+                seq_recovery = _parse_optional_float(_SEQ_RECOVERY_RE, header)
+                if seq_recovery is not None:
+                    out_record["mpnn_seq_recovery"] = seq_recovery
                 fh.write(json.dumps(out_record, sort_keys=True) + "\n")
     return out_jsonl

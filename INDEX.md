@@ -55,7 +55,7 @@ One-line description per tracked file. New file? Add a line here.
 - `workflow/scripts/__init__.py` — Marks workflow.scripts as a package (mypy + imports).
 - `workflow/scripts/prep_target.py` — Stage 0 entry point.
 - `workflow/scripts/run_rfdiffusion.py` — Stage 1 entry point.
-- `workflow/scripts/run_proteinmpnn.py` — Stage 2a: ProteinMPNN complex-mode wrapper.
+- `workflow/scripts/run_proteinmpnn.py` — Stage 2a: ProteinMPNN complex-mode wrapper. **DEPRECATED for real-mode** (cycle 02+); mock paths retained for cycle-1 controls. Real-mode bypasses this and invokes upstream ProteinMPNN directly from `scripts/run_stage2.py`.
 - `workflow/scripts/run_colabfold.py` — Stage 2b: ColabFold (AF2-multimer) native wrapper.
 - `workflow/scripts/compute_metrics.py` — Stage 2c: iPAE / ipLDDT / BSA computation.
 - `workflow/scripts/splice_binder.py` — Stage 2 designs: splice Stage 1 binder (chain A) onto cleaned pMHC as chain D.
@@ -105,6 +105,7 @@ One-line description per tracked file. New file? Add a line here.
 - `tests/test_splice_binder.py` — Splice helper unit tests (chain rename A->D, residue renumbering, defensive asserts).
 - `tests/test_aggregate_mpnn_outputs.py` — MPNN FASTA parsing + MPNN/AF2 seed range + uniqueness tests.
 - `tests/test_stage2_designs_halt_gate.py` — Stage 2 designs orchestrator + halt-gate tests (pass-at-boundary + fail paths).
+- `tests/test_run_stage2.py` — Stage 2 real-mode helper tests (multimer FASTA writer, target chain sequence extraction, binder-length manifest loader).
 - `tests/fixtures/target_3hpj_clean.pdb` — 1-line ATOM stub for stage 0 primary.
 - `tests/fixtures/target_2bnr_clean.pdb` — 1-line ATOM stub for stage 0 positive control.
 - `tests/fixtures/rfdiffusion/sample.pdb` — Stage 1 cycle-1 stub backbone (legacy).

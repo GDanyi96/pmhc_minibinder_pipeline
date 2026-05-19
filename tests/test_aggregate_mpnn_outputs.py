@@ -135,6 +135,68 @@ def test_aggregate_emits_records_sorted_by_caller(tmp_path: Path) -> None:
     assert records[2]["mpnn_seed"] == 2204
 
 
+def test_aggregate_slices_binder_when_binder_length_provided(tmp_path: Path) -> None:
+    """Real ProteinMPNN emits the full A+B+C+D complex sequence per
+    record; the aggregator must keep only the last N residues when
+    ``binder_length`` is supplied. Trap #6.
+    """
+    fasta = tmp_path / "design_00000.fa"
+    fasta.write_text(
+        ">scaffold_full\nAAABBBCCCDDD\n"
+        ">T=0.1, sample=1, score=0.50, global_score=0.60\nAAABBBCCCEEE\n"
+    )
+    out = tmp_path / "sequences.jsonl"
+    seeds = _load_real_seeds()
+    aggregate(
+        per_design_fastas=[fasta],
+        design_records=[
+            {
+                "design_id": "design_00000",
+                "backbone_pdb": "x.pdb",
+                "spliced_pdb": "y.pdb",
+                "binder_length": 3,
+            }
+        ],
+        cycle=2,
+        seeds=seeds,
+        out_jsonl=out,
+    )
+    records = [json.loads(line) for line in out.read_text().splitlines()]
+    assert len(records) == 1
+    assert records[0]["seq"] == "EEE"
+    assert records[0]["mpnn_global_score"] == pytest.approx(0.60)
+
+
+def test_aggregate_emits_optional_header_fields(tmp_path: Path) -> None:
+    fasta = tmp_path / "design_00000.fa"
+    fasta.write_text(
+        ">scaffold_input\nGGGGGG\n"
+        ">T=0.1, sample=3, score=0.75, global_score=0.80, seq_recovery=0.55\nMAEELA\n"
+    )
+    out = tmp_path / "sequences.jsonl"
+    seeds = _load_real_seeds()
+    aggregate(
+        per_design_fastas=[fasta],
+        design_records=[
+            {
+                "design_id": "design_00000",
+                "backbone_pdb": "x.pdb",
+                "spliced_pdb": "y.pdb",
+            }
+        ],
+        cycle=2,
+        seeds=seeds,
+        out_jsonl=out,
+    )
+    records = [json.loads(line) for line in out.read_text().splitlines()]
+    assert len(records) == 1
+    rec = records[0]
+    assert rec["mpnn_nll"] == pytest.approx(0.75)
+    assert rec["mpnn_global_score"] == pytest.approx(0.80)
+    assert rec["mpnn_sample"] == 3
+    assert rec["mpnn_seq_recovery"] == pytest.approx(0.55)
+
+
 def test_aggregate_skips_scaffold_record(tmp_path: Path) -> None:
     fasta = tmp_path / "design_00000.fa"
     fasta.write_text(">input_scaffold\nGGGG\n" ">T=0.1, sample=1, score=0.50\nMAEELA\n")

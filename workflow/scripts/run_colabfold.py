@@ -1,9 +1,10 @@
 """Stage 2b — ColabFold (AF2-multimer) wrapper.
 
 Real mode: shells out to `colabfold_batch` (installed via the `colabfold`
-optional extra) with `--num-recycle 6 --model-type alphafold2_multimer_v3
---use-gpu-relax` per MARES_IOANNIDIS_2025. The RunPod pod IS the container
-(no DinD); colabfold-batch runs natively in the pod's Python env.
+optional extra) with `--num-recycle 6 --model-type alphafold2_multimer_v3`
+per MARES_IOANNIDIS_2025 and Baker lab convention (pmhc_fold.py
+do_relax=False — see trap #4). The RunPod pod IS the container (no
+DinD); colabfold-batch runs natively in the pod's Python env.
 
 Mock mode: copies pre-baked fixtures from `tests/fixtures/stage2/controls_colabfold/`
 into per-id subdirectories of `--out-dir`. No GPU.
@@ -71,13 +72,15 @@ def _reshape_flat_outputs(out_dir: Path, ids: list[str]) -> None:
 
 def run_real(fasta_dir: Path, out_dir: Path, num_recycles: int) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
+    # NOTE: --use-gpu-relax intentionally omitted (trap #4). Baker lab's
+    # pmhc_fold.py runs do_relax=False during binder triage; AMBER relax
+    # adds 30-50 % wall time without changing iPAE/ipLDDT ranking.
     cmd = [
         "colabfold_batch",
         "--num-recycle",
         str(num_recycles),
         "--model-type",
         "alphafold2_multimer_v3",
-        "--use-gpu-relax",
         str(fasta_dir),
         str(out_dir),
     ]

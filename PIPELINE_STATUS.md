@@ -11,7 +11,7 @@ contracts see `specs/stageN_*.md`.
 | 0     | Target prep (clean PDB, hotspots)    | scaffolded             |
 | 1     | RFdiffusion backbones                | **mock-CI green; real-run ready (native driver + weights gated behind `--with-rfdiffusion-weights`)** |
 | 2 (controls) | ProteinMPNN + AF2-multimer + P1-N2 panel | mock-CI green; real-run rewired to native install (cycle 1) |
-| 2 (designs)  | ProteinMPNN + AF2 fan-in on Stage 1 outputs | **mock-CI green; real-run blocked on pod (post-merge user task)** |
+| 2 (designs)  | ProteinMPNN + AF2 fan-in on Stage 1 outputs | **real-mode implemented (cycle 02 PoC: num_recycles=3, fan_in_top_n=50); mock-CI green; pod run pending** |
 | 3     | Cross-pan off-target grid            | not started            |
 | 4     | ESM-2 embeddings + FPS               | not started            |
 | 5     | LightGBM + GP active learning        | not started            |
