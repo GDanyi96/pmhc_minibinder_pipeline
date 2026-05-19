@@ -202,15 +202,50 @@ asserts pass-path AND a synthesized fail-path (force 6 fails → observed
   `inference.num_designs=N` seed-threading behaviour (documented in the
   module docstring + `docs/known_traps.md`).
 - [ ] `scripts/run_stage1.py` — orchestrator mirroring
-  `scripts/run_controls.py`. Flags `--cycle`, `--mock`, `--metrics-only`.
-  `os.environ.pop("LD_LIBRARY_PATH", None)` at top.
+  `scripts/run_controls.py`. Flags `--cycle`, `--mock`, `--skip-subprocess`.
+  `--skip-subprocess` skips both the RFdiffusion subprocess and the
+  mock-fixture copy, then re-enumerates whatever `design_*.pdb` files
+  already exist in `out-dir/designs/` and rewrites `stage1_summary.json`.
+  This is the recovery path for the cycle-02 writer/reader filename drift
+  (see `docs/known_traps.md`); it replaces the older `--metrics-only`
+  flag, which only re-read an existing (potentially broken) summary and
+  had no production use case. `os.environ.pop("LD_LIBRARY_PATH", None)`
+  at top.
 - [ ] `tests/test_run_rfdiffusion.py` — unit tests for the helpers.
 - [ ] `tests/test_stage1_halt_gate.py` — orchestrator + halt-gate test
   (pass + fail directions).
+- [ ] `tests/test_run_rfdiffusion_real_writer.py` — synthetic regression
+  test exercising the real RFdiffusion filename convention
+  (`design_{seed}.pdb`, seed = cycle\*1000 + design_index) independently
+  of `_copy_mock_fixtures`. Would have caught the cycle 02 drift.
 - [ ] `workflow/rules/01_rfdiffusion.smk` — overhauled to consume `target.yaml`
   + `rfdiffusion_default.yaml` + `seeds.yaml` and produce the outputs above.
+  The rule's outputs are `stage1_summary.json` and `designs.jsonl`; it no
+  longer asserts a per-design PDB filename as a sentinel (real-mode writer
+  emits `design_{seed}.pdb`, not `design_00000.pdb`, so the previous
+  `sample_pdb=...design_00000.pdb` declaration would never resolve).
 - [ ] `workflow/rules/02_proteinmpnn.smk` — declare `stage1_summary.json`
   as an upstream input so the DAG chains.
+
+### Writer/reader filename contract
+
+The enumerator that builds `stage1_summary.json` and `designs.jsonl`
+resolves on-disk PDB paths through a single helper,
+`_expected_pdb_path(designs_dir, design_index, cycle, seeds, mock)`:
+
+- In **real mode**: returns `designs_dir / f"design_{seed}.pdb"` where
+  `seed = _compute_seed(cycle, design_index, seeds)`. This matches
+  RFdiffusion's `inference.output_prefix={designs_dir}/design` +
+  `inference.design_startnum={seed}` (un-padded, variable-digit names).
+- In **mock mode**: returns `designs_dir / f"design_{design_index:05d}.pdb"`,
+  matching `_copy_mock_fixtures`'s output after stripping `mock_` from
+  the fixture filenames.
+
+`_compute_seed` is the single source of truth for the seed formula
+(`cycle * 1000 + design_index`, enforced against the reserved range in
+`seeds.yaml`). Any change to the writer-side naming must be mirrored in
+`_expected_pdb_path`, never in the call sites. See `docs/known_traps.md`
+for the cycle 02 incident this contract prevents.
 
 ## Known traps inherited
 
