@@ -121,21 +121,29 @@ def write_mock_target_yaml(out: Path, cleaned_pdb: Path) -> None:
 
 
 def _passing_backbone(n: int) -> list[tuple[str, int, tuple[float, float, float]]]:
-    """Straight backbone passing through the hotspot cluster centroid."""
+    """Straight backbone passing through the hotspot cluster centroid.
+
+    Atoms are placed on chain ``D`` to match mock_target.yaml's binder
+    declaration and the real RFdiffusion chain layout (motif A/B/C,
+    binder D). See docs/known_traps.md trap #28.
+    """
     atoms: list[tuple[str, int, tuple[float, float, float]]] = []
     for i in range(n):
         x = 1.5
         y = i * 3.9 - (n - 1) * 3.9 / 2 + 3.5
         z = 2.5
-        atoms.append(("A", i + 1, (x, y, z)))
+        atoms.append(("D", i + 1, (x, y, z)))
     return atoms
 
 
 def _distant_backbone(n: int) -> list[tuple[str, int, tuple[float, float, float]]]:
-    """Backbone placed 100 A away from the hotspot cluster — no contacts."""
+    """Backbone placed 100 A away from the hotspot cluster -- no contacts.
+
+    Atoms are placed on chain ``D`` (see _passing_backbone docstring).
+    """
     atoms: list[tuple[str, int, tuple[float, float, float]]] = []
     for i in range(n):
-        atoms.append(("A", i + 1, (100.0, float(i) * 3.9, 100.0)))
+        atoms.append(("D", i + 1, (100.0, float(i) * 3.9, 100.0)))
     return atoms
 
 

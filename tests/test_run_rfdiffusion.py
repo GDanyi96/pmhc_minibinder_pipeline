@@ -217,7 +217,7 @@ def _passing_binder_pdb(path: Path, n: int = 80) -> None:
 def test_geometry_pass_three_contacts(tmp_path: Path) -> None:
     pdb = tmp_path / "design_pass.pdb"
     _passing_binder_pdb(pdb, n=80)
-    result = _geometry_pass(pdb, HOTSPOTS_ON_AXIS, (70, 110))
+    result = _geometry_pass(pdb, HOTSPOTS_ON_AXIS, (70, 110), frozenset())
     assert result["geometry_pass"] is True
     assert result["ca_contact_to_hotspots_n"] >= 3
     assert result["binder_length"] == 80
@@ -228,7 +228,7 @@ def test_geometry_pass_no_contacts(tmp_path: Path) -> None:
     pdb = tmp_path / "design_fail_distant.pdb"
     atoms = [("A", i + 1, (100.0, float(i) * 3.9, 0.0)) for i in range(80)]
     _write_pdb(pdb, atoms)
-    result = _geometry_pass(pdb, HOTSPOTS_ON_AXIS, (70, 110))
+    result = _geometry_pass(pdb, HOTSPOTS_ON_AXIS, (70, 110), frozenset())
     assert result["geometry_pass"] is False
     assert result["ca_contact_to_hotspots_n"] == 0
     assert "insufficient_hotspot_contacts" in result["fail_reasons"]
@@ -237,7 +237,7 @@ def test_geometry_pass_no_contacts(tmp_path: Path) -> None:
 def test_geometry_pass_length_oob(tmp_path: Path) -> None:
     pdb = tmp_path / "design_fail_short.pdb"
     _passing_binder_pdb(pdb, n=50)
-    result = _geometry_pass(pdb, HOTSPOTS_ON_AXIS, (70, 110))
+    result = _geometry_pass(pdb, HOTSPOTS_ON_AXIS, (70, 110), frozenset())
     assert result["geometry_pass"] is False
     assert "length_out_of_range" in result["fail_reasons"]
 
@@ -249,7 +249,7 @@ def test_geometry_pass_internal_clash(tmp_path: Path) -> None:
         atoms.append(("A", i + 1, (5.0, float(i) * 3.9, 0.0)))
     atoms[40] = ("A", 41, (5.0, 0.0, 0.0))  # collides with atom 0
     _write_pdb(pdb, atoms)
-    result = _geometry_pass(pdb, HOTSPOTS_ON_AXIS, (70, 110))
+    result = _geometry_pass(pdb, HOTSPOTS_ON_AXIS, (70, 110), frozenset())
     assert result["geometry_pass"] is False
     assert result["internal_clash_count"] > 0
     assert "internal_ca_clash" in result["fail_reasons"]
@@ -258,6 +258,6 @@ def test_geometry_pass_internal_clash(tmp_path: Path) -> None:
 def test_geometry_pass_empty_binder(tmp_path: Path) -> None:
     pdb = tmp_path / "design_empty.pdb"
     pdb.write_text("END\n")
-    result = _geometry_pass(pdb, HOTSPOTS_ON_AXIS, (70, 110))
+    result = _geometry_pass(pdb, HOTSPOTS_ON_AXIS, (70, 110), frozenset())
     assert result["geometry_pass"] is False
     assert result["binder_length"] == 0

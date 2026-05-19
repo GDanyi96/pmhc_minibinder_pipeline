@@ -361,3 +361,39 @@ the dispatch pre-flight and the post-run enumerator route through it.
 `scripts/run_stage1.py --skip-subprocess` re-enumerates without
 re-invoking RFdiffusion, providing a recovery path that does not waste
 the 10 h of compute.
+
+## Trap #28: `_binder_ca_coords` hardcoded the binder to chain "A"
+
+**Symptom**: Cycle 02 `--skip-subprocess` recovery completed
+(n_completed=200) but reported `binder_length=275` on every design and
+failed the geometry length check on 200/200. Mock canary still passed
+8/10 (tautology: mocks placed the binder on chain "A" too, so the wrong
+reader happened to align with the wrong fixtures).
+
+**Root cause**: `workflow/scripts/run_rfdiffusion.py:_binder_ca_coords`
+selected chain "A" based on the false comment "RFdiffusion writes the
+binder as chain A". For real binder-design with contig
+`[A1-275/0 B0-99/0 C1-9/0 70-110]`, RFdiffusion preserves A/B/C as
+motif chains and writes the designed binder to the next free letter
+(chain D). The function was reading the HLA heavy chain (275 res),
+which then tripped the length filter `[65, 115]`. Verified empirically
+on `results/cycle_02/stage1/rfdiffusion/designs/design_2000.pdb`:
+chain CA counts = `{'D': 98, 'A': 275, 'B': 100, 'C': 9}`.
+
+**Fix**: Identify the binder by exclusion. `_binder_ca_coords` now
+takes `fixed_chains: frozenset[str]` derived from
+`target.chains[*].role != "binder"` and selects the unique remaining
+chain in the PDB. Raises ValueError on ambiguity (zero or >1
+candidate). Mock fixtures (`tests/fixtures/stage1/mock_design_*.pdb`)
+regenerated to put the binder on chain D so the canary now exercises
+the real chain layout.
+
+**Recurrence guard**:
+`tests/test_run_rfdiffusion_real_writer.py::test_real_writer_binder_chain_is_D`
+synthesizes a 4-chain PDB (A=275, B=100, C=9, D=85) and asserts the
+correct chain is read. `test_binder_ca_coords_raises_on_ambiguous_chains`
+asserts the loud-failure mode when chain assignment is ambiguous.
+
+**Same bug class**: Traps #26, #27. Stage 2 `splice_binder.py:70`
+embeds the same false belief (rejects PDBs whose first chain is not
+"A") and is filed as a follow-up issue.
