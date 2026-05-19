@@ -20,10 +20,12 @@ mock-mode CI; ~40-entry trap book.
   31–35). The calibration also reproduced AF2's known peptide-identity
   blind spot (WT1 binder folded well against MART-1), which motivates the
   Stage 3 cross-pan + Hamming proteome scan downstream.
-- **Cycle 2 de novo run** on WT1/A*02:01: 200 RFdiffusion backbones,
-  motif RMSD ~0.12 Å, 26 geometry-pass (13%). Stage 2 (ProteinMPNN +
-  AF2-multimer) in flight at the time of writing (~5h wall, MSA per
-  design).
+- **Cycle 2 de novo run** on WT1/A*02:01 ran end-to-end: 200 RFdiffusion
+  backbones → 26 geometry-pass (13%) → 50 sequences folded by AF2-multimer → 1
+  hero design at iPAE 6.41 Å, sitting in the cycle 1 positive-control band.
+  2% strict-cut yield matches the pre-optimization range Liu et al. report;
+  cycle 03 applies peptide-centric arcing, alanine bias, and increased sequence
+  sampling per backbone for the production run.
 
 📖 [Scientific narrative](docs/narrative.md)
 📊 [Cycle 02 results](notebooks/cycle_02_report.ipynb)
