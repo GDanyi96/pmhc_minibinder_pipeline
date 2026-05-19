@@ -1,8 +1,6 @@
 # De novo pMHC-I minibinder design pipeline: scientific narrative
 
-*Application-ready writeup as of 2026-05-19. Cycle 02 Stage 1 complete; Stage 2 in flight.*
 
----
 
 ## Executive summary
 
