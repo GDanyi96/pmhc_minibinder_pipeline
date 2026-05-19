@@ -1,3 +1,4 @@
+# mypy: disable-error-code="no-untyped-call,attr-defined"
 """Stage 2 designs orchestrator -- splice + MPNN + AF2 fan-in + halt gate.
 
 Mirrors `scripts/run_stage1.py`:
@@ -26,12 +27,16 @@ import argparse
 import json
 import logging
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+from Bio.PDB import PDBParser
+from Bio.PDB.Structure import Structure
+from Bio.SeqUtils import seq1
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from workflow.scripts import (
@@ -40,6 +45,7 @@ from workflow.scripts import (
     splice_binder,
 )
 from workflow.scripts.prep_target import TargetManifest
+from workflow.scripts.run_colabfold import _reshape_flat_outputs
 
 logger = logging.getLogger("run_stage2")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -53,7 +59,33 @@ DEFAULT_MPNN_CONFIG = Path("configs/proteinmpnn_default.yaml")
 DEFAULT_AF2_CONFIG = Path("configs/af2_stage2.yaml")
 DEFAULT_SEEDS_CONFIG = Path("configs/seeds.yaml")
 
+PROTEINMPNN_DIR = Path(os.environ.get("PROTEINMPNN_DIR", "/workspace/ProteinMPNN"))
+_PMHC_TARGET_CHAINS = ("A", "B", "C")
+_BINDER_CHAIN = "D"
+
 HaltStatus = Literal["pass", "halt"]
+
+
+def _resolve_proteinmpnn_python() -> str:
+    """Return the SE3nv conda interpreter path for upstream ProteinMPNN.
+
+    Mirrors ``workflow.scripts.run_rfdiffusion._resolve_rfdiffusion_python``:
+    pipeline scripts run under uv, but ProteinMPNN's helper scripts live
+    in a conda env (torch + the dauparas/ProteinMPNN repo). Overridable
+    via ``PROTEINMPNN_PYTHON``; defaults to the SE3nv interpreter that
+    bootstrap.sh sets up.
+    """
+    path = os.environ.get(
+        "PROTEINMPNN_PYTHON",
+        "/workspace/miniconda3/envs/SE3nv/bin/python",
+    )
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"PROTEINMPNN_PYTHON not found: {path}. "
+            "Install the SE3nv conda env (see bootstrap.sh) or override "
+            "PROTEINMPNN_PYTHON to point at a torch-equipped interpreter."
+        )
+    return path
 
 
 def enforce_halt_gate(summary: dict[str, object]) -> tuple[HaltStatus, str]:
@@ -100,6 +132,185 @@ def _splice_all(backbone_pdbs: list[Path], cleaned_pmhc: Path, spliced_dir: Path
     return spliced_paths
 
 
+def _extract_target_chain_sequences(cleaned_pdb: Path) -> dict[str, str]:
+    """Read chains A, B, C from the cleaned pMHC and return their
+    one-letter amino acid sequences. Chain order in the multimer FASTA
+    is fixed at A=HC, B=beta2m, C=peptide (binder appears as D).
+    """
+    parser = PDBParser(QUIET=True)
+    structure: Structure = parser.get_structure(cleaned_pdb.stem, str(cleaned_pdb))
+    model = structure[0]
+    seqs: dict[str, str] = {}
+    for cid in _PMHC_TARGET_CHAINS:
+        if cid not in model:
+            raise ValueError(f"{cleaned_pdb}: missing target chain {cid!r}")
+        residues = [r for r in model[cid].get_residues() if r.id[0].strip() == ""]
+        seqs[cid] = "".join(seq1(r.get_resname()) for r in residues)
+    return seqs
+
+
+def _load_binder_lengths(stage1_designs_jsonl: Path) -> dict[str, int]:
+    """Join binder_length by design_id from Stage 1's designs.jsonl
+    manifest -- the source of truth for chain D residue counts (never
+    recompute from PDBs).
+    """
+    out: dict[str, int] = {}
+    for line in stage1_designs_jsonl.read_text().splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        out[rec["design_id"]] = int(rec["binder_length"])
+    return out
+
+
+def _build_multimer_fasta(
+    fasta_path: Path,
+    record_id: str,
+    target_seqs: dict[str, str],
+    binder_seq: str,
+) -> None:
+    """ColabFold multimer FASTA: a single record with colon-separated
+    chains in PDB order A:B:C:D. No trailing colon. Trap #7.
+    """
+    body = ":".join((target_seqs["A"], target_seqs["B"], target_seqs["C"], binder_seq))
+    fasta_path.parent.mkdir(parents=True, exist_ok=True)
+    fasta_path.write_text(f">{record_id}\n{body}\n")
+
+
+def _stage_input_pdbs(spliced_pdbs: list[Path], work_dir: Path) -> Path:
+    """Symlink the spliced PDBs into a fresh ``input_pdbs/`` directory.
+
+    ProteinMPNN's ``parse_multiple_chains.py`` greedily reads every file
+    under ``--input_path``; staging into a dedicated dir keeps unrelated
+    artefacts (Snakemake markers, .ipynb_checkpoints) out of the batch.
+    """
+    input_dir = work_dir / "input_pdbs"
+    if input_dir.exists():
+        shutil.rmtree(input_dir)
+    input_dir.mkdir(parents=True)
+    for pdb in spliced_pdbs:
+        link = input_dir / pdb.name
+        link.symlink_to(pdb.resolve())
+    return input_dir
+
+
+def _run_real_proteinmpnn(
+    spliced_pdbs: list[Path],
+    work_dir: Path,
+    cfg: dict[str, Any],
+    seed: int,
+) -> list[Path]:
+    """Drive upstream dauparas/ProteinMPNN via the canonical 3-step
+    multi-PDB batch pattern. One model load for the whole batch.
+
+    Returns per-design ``.fa`` paths under ``mpnn_out/seqs/`` ordered to
+    match ``spliced_pdbs``.
+    """
+    proteinmpnn_python = _resolve_proteinmpnn_python()
+    input_dir = _stage_input_pdbs(spliced_pdbs, work_dir)
+    parsed_jsonl = work_dir / "parsed_pdbs.jsonl"
+    chains_jsonl = work_dir / "chain_assignments.jsonl"
+    mpnn_out = work_dir / "mpnn_out"
+    mpnn_out.mkdir(parents=True, exist_ok=True)
+
+    helpers = PROTEINMPNN_DIR / "helper_scripts"
+    parse_cmd = [
+        proteinmpnn_python,
+        str(helpers / "parse_multiple_chains.py"),
+        "--input_path",
+        str(input_dir),
+        "--output_path",
+        str(parsed_jsonl),
+    ]
+    logger.info("ProteinMPNN parse: %s", parse_cmd)
+    subprocess.run(parse_cmd, check=True, env={**os.environ})
+
+    assign_cmd = [
+        proteinmpnn_python,
+        str(helpers / "assign_fixed_chains.py"),
+        "--input_path",
+        str(parsed_jsonl),
+        "--output_path",
+        str(chains_jsonl),
+        "--chain_list",
+        _BINDER_CHAIN,
+    ]
+    logger.info("ProteinMPNN assign: %s", assign_cmd)
+    subprocess.run(assign_cmd, check=True, env={**os.environ})
+
+    run_cmd = [
+        proteinmpnn_python,
+        str(PROTEINMPNN_DIR / "protein_mpnn_run.py"),
+        "--jsonl_path",
+        str(parsed_jsonl),
+        "--chain_id_jsonl",
+        str(chains_jsonl),
+        "--out_folder",
+        str(mpnn_out),
+        "--num_seq_per_target",
+        str(cfg["n_seqs_per_backbone"]),
+        "--sampling_temp",
+        str(cfg["sampling_temperature"]),
+        "--seed",
+        str(seed),
+        "--batch_size",
+        "1",
+        "--save_score",
+        "1",
+    ]
+    logger.info("ProteinMPNN run: %s", run_cmd)
+    subprocess.run(run_cmd, check=True, env={**os.environ})
+
+    seqs_dir = mpnn_out / "seqs"
+    fastas: list[Path] = []
+    for pdb in spliced_pdbs:
+        fa = seqs_dir / f"{pdb.stem}.fa"
+        if not fa.exists():
+            raise FileNotFoundError(f"ProteinMPNN output missing for {pdb.stem}: {fa}")
+        fastas.append(fa)
+    return fastas
+
+
+def _run_real_colabfold(
+    top_records: list[dict[str, Any]],
+    target_seqs: dict[str, str],
+    fasta_dir: Path,
+    predictions_dir: Path,
+    cfg: dict[str, Any],
+) -> None:
+    """Write one multimer FASTA per ranked record and invoke
+    ``colabfold_batch`` for the whole batch. No --use-gpu-relax
+    (trap #4).
+    """
+    fasta_dir.mkdir(parents=True, exist_ok=True)
+    predictions_dir.mkdir(parents=True, exist_ok=True)
+    ids: list[str] = []
+    for rec in top_records:
+        record_id = f"{rec['design_id']}_seq{int(rec['seq_id']):02d}"
+        fasta_path = fasta_dir / f"{record_id}.fasta"
+        _build_multimer_fasta(fasta_path, record_id, target_seqs, str(rec["seq"]))
+        ids.append(record_id)
+
+    cmd = [
+        "colabfold_batch",
+        "--num-recycle",
+        str(cfg["num_recycles"]),
+        "--model-type",
+        "alphafold2_multimer_v3",
+        "--msa-mode",
+        "mmseqs2_uniref",
+        "--num-models",
+        "5",
+        "--rank",
+        "multimer",
+        str(fasta_dir),
+        str(predictions_dir),
+    ]
+    logger.info("colabfold_batch: %s", cmd)
+    subprocess.run(cmd, check=True, env={**os.environ})
+    _reshape_flat_outputs(predictions_dir, ids)
+
+
 def _copy_mock_mpnn_outputs(backbones: list[Path], per_design_root: Path) -> list[Path]:
     src_dir = MOCK_FIXTURES_DIR / "mpnn_outputs"
     fastas: list[Path] = []
@@ -126,13 +337,27 @@ def _copy_mock_af2_predictions(top_records: list[dict[str, Any]], predictions_ro
 
 
 def _compute_metrics_for_predictions(
-    top_records: list[dict[str, Any]], predictions_root: Path
+    top_records: list[dict[str, Any]],
+    predictions_root: Path,
+    mock: bool,
 ) -> list[dict[str, Any]]:
+    """Compute iPAE / ipLDDT / BSA for each fan-in prediction.
+
+    Real-mode routes through ``compute_metrics.metrics_for_design``
+    (canonical heavy-atom 8 A interface). Mock-mode keeps
+    ``metrics_for_control`` (the existing position-slice path) so the
+    boundary fixture in ``tests/fixtures/stage2/designs/`` continues to
+    yield 4/40 -- see specs/stage2_proteinmpnn_af2.md "Mock mode".
+    """
+    pred_id_fmt = "{design_id}_seq{seq_id}" if mock else "{design_id}_seq{seq_id:02d}"
     metric_records: list[dict[str, Any]] = []
     for rec in top_records:
-        pred_id = f"{rec['design_id']}_seq{rec['seq_id']}"
+        pred_id = pred_id_fmt.format(design_id=rec["design_id"], seq_id=int(rec["seq_id"]))
         pred_dir = predictions_root / pred_id
-        m = compute_metrics.metrics_for_control(pred_dir, None)
+        if mock:
+            m = compute_metrics.metrics_for_control(pred_dir, None)
+        else:
+            m = compute_metrics.metrics_for_design(pred_dir)
         metric_records.append(
             {
                 "design_id": rec["design_id"],
@@ -232,6 +457,7 @@ def run(
     target = _load_target(target_manifest)
     cleaned_pmhc = _resolve_cleaned_pdb(target.primary.cleaned_pdb, target_manifest)
     af2_cfg = yaml.safe_load(af2_config.read_text())
+    mpnn_cfg = yaml.safe_load(mpnn_config.read_text())
     seeds = aggregate_mpnn_outputs._load_seeds(seeds_config)
 
     # Locate Stage 1 backbones. In mock mode the fixture ships its own
@@ -251,18 +477,33 @@ def run(
     spliced_pdbs = _splice_all(backbones, cleaned_pmhc, spliced_dir)
     (spliced_dir / ".done").touch()
 
+    binder_lengths: dict[str, int] = {}
+    if not mock:
+        stage1_designs_jsonl = stage1_summary_path.parent / "designs.jsonl"
+        if not stage1_designs_jsonl.exists():
+            logger.error("stage1 designs manifest missing: %s", stage1_designs_jsonl)
+            return 1
+        binder_lengths = _load_binder_lengths(stage1_designs_jsonl)
+
     per_design_root = out_dir / "proteinmpnn_designs" / "per_design"
     if mock:
         per_design_fastas = _copy_mock_mpnn_outputs(backbones, per_design_root)
     else:
-        msg = "real ProteinMPNN invocation is the pod's job; this PR ships mock-CI-green only"
-        raise NotImplementedError(msg)
+        # Cycle 02 seed contract: a single MPNN seed governs the whole
+        # batch (one-call invocation; per-design / per-sample seeding is
+        # deferred to cycle 03). We assert the first reserved seed for
+        # this cycle exists, matching aggregator behaviour.
+        batch_seed = aggregate_mpnn_outputs._compute_mpnn_seed(cycle, 0, 0, seeds)
+        mpnn_work_dir = out_dir / "proteinmpnn_designs" / "mpnn_work"
+        mpnn_work_dir.mkdir(parents=True, exist_ok=True)
+        per_design_fastas = _run_real_proteinmpnn(spliced_pdbs, mpnn_work_dir, mpnn_cfg, batch_seed)
 
-    design_records: list[dict[str, str | int]] = [
+    design_records: list[dict[str, str | int | None]] = [
         {
             "design_id": backbone.stem,
             "backbone_pdb": str(backbone),
             "spliced_pdb": str(spliced),
+            "binder_length": binder_lengths.get(backbone.stem) if not mock else None,
         }
         for backbone, spliced in zip(backbones, spliced_pdbs, strict=True)
     ]
@@ -276,7 +517,15 @@ def run(
     )
 
     records = [json.loads(line) for line in sequences_jsonl.read_text().splitlines()]
-    records.sort(key=lambda r: r["mpnn_nll"])
+
+    # Real-mode rank: ProteinMPNN's global_score (lower=better) per spec.
+    # Mock fixtures only emit ``score`` so fall back to mpnn_nll there.
+    def _rank_key(rec: dict[str, Any]) -> float:
+        if "mpnn_global_score" in rec:
+            return float(rec["mpnn_global_score"])
+        return float(rec["mpnn_nll"])
+
+    records.sort(key=_rank_key)
     n_total = len(records)
     fan_in_top_n = min(n_total, 40) if mock else int(af2_cfg["fan_in_top_n"])
     top_records = records[:fan_in_top_n]
@@ -285,10 +534,11 @@ def run(
     if mock:
         _copy_mock_af2_predictions(top_records, predictions_root)
     else:
-        msg = "real ColabFold invocation is the pod's job; this PR ships mock-CI-green only"
-        raise NotImplementedError(msg)
+        target_seqs = _extract_target_chain_sequences(cleaned_pmhc)
+        fasta_dir = out_dir / "af2_designs" / "fastas"
+        _run_real_colabfold(top_records, target_seqs, fasta_dir, predictions_root, af2_cfg)
 
-    metric_records = _compute_metrics_for_predictions(top_records, predictions_root)
+    metric_records = _compute_metrics_for_predictions(top_records, predictions_root, mock=mock)
     _write_jsonl(metric_records, out_dir / "af2_designs" / "metrics.jsonl")
 
     summary = _build_summary(

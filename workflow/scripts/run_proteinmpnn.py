@@ -1,18 +1,25 @@
 # mypy: disable-error-code="no-untyped-call,attr-defined,no-any-return,misc"
-"""Stage 2a — ProteinMPNN complex-mode wrapper.
+"""DEPRECATED -- real-mode bypassed in cycle 02+.
 
-Real mode: invokes `python $PROTEINMPNN_DIR/protein_mpnn_run.py …` natively
-(the upstream dauparas/ProteinMPNN script, cloned by bootstrap.sh into
-`/workspace/ProteinMPNN`). The RunPod pod IS the container — no DinD.
-Args: `--sampling_temp 0.1` (HADRUP_JENKINS_2025), `--num_seq_per_target 10`.
-Chain A+B+C (HC, beta2m, peptide) are fixed; chain D is designed.
+Stage 2 designs (``scripts/run_stage2.py``) now invokes upstream
+``dauparas/ProteinMPNN`` directly via the canonical multi-PDB batch
+pattern (parse_multiple_chains -> assign_fixed_chains -> protein_mpnn_run),
+mirroring ``scripts/run_stage1.py``'s direct-subprocess style. This
+wrapper's ``run_real()`` carries three confirmed bugs:
 
-Mock mode: copies `tests/fixtures/proteinmpnn/sample.fasta` to
-`<out_folder>/<pdb_stem>.fasta`. No GPU.
+* ``--fixed_chains`` / ``--designed_chain`` are not valid
+  ``protein_mpnn_run.py`` flags (upstream uses ``--chain_id_jsonl``).
+* ``assert_no_chain_d`` is misplaced relative to the splice step (binder
+  IS chain D after splicing).
+* Never validated against real data.
 
-Asserts the input PDB has no existing chain D before running — Stage 0
-cleaned crystal structures must not pre-populate the binder chain.
-Pitfall #7 in specs/stage2_proteinmpnn_af2.md.
+The mock paths remain functional and are still used by the cycle-1
+controls regression. Do not invoke ``run_real`` from new code; do not
+extend it. See ``specs/stage2_proteinmpnn_af2.md`` and the deprecation
+notes in ``PIPELINE_STATUS.md`` for the rationale.
+
+Mock mode: copies ``tests/fixtures/proteinmpnn/sample.fasta`` to
+``<out_folder>/<pdb_stem>.fasta``. No GPU.
 """
 
 from __future__ import annotations

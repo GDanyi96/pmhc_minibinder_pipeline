@@ -3,6 +3,9 @@ set -e
 echo "═══════════════════════════════════════════════════════════"
 echo "Pre-push verification gate"
 echo "═══════════════════════════════════════════════════════════"
+echo "Running formatter check..."
+uv run black --check . || { echo "FAIL: black --check failed. Run 'uv run black .' before pushing."; exit 1; }
+echo "PASS: formatter clean."
 echo "Running snakemake dry-run in mock mode..."
 if ! command -v snakemake &> /dev/null; then
     echo "WARN: snakemake not installed in this env; skipping dry-run gate."
