@@ -243,13 +243,21 @@ def _compute_seed(cycle: int, design_index: int, seeds: SeedsConfig) -> int:
     return seed
 
 
-def _binder_ca_coords(pdb_path: Path) -> np.ndarray:
-    """Return (N, 3) array of Ca coords from chain A of an RFdiffusion output.
+def _binder_ca_coords(pdb_path: Path, fixed_chains: frozenset[str]) -> np.ndarray:
+    """Return (N, 3) array of Ca coords from the binder chain.
 
-    RFdiffusion writes the binder as chain "A" inside its output PDB (per
-    spec; renaming to chain D is Stage 2's splicing job). If the PDB has
-    multiple chains we still take chain "A". Empty/parseless PDBs yield
-    an empty (0, 3) array.
+    RFdiffusion preserves motif chain IDs from the input contigmap and
+    assigns the next free letter to the designed segment. Empirically:
+    contig ``[A1-275/0 B0-99/0 C1-9/0 70-110]`` yields chain D for the
+    binder (verified cycle 02 -- see docs/known_traps.md trap #28).
+    Identify the binder as the unique chain present in the PDB that is
+    not declared as a motif chain in the target manifest.
+
+    fixed_chains: chain IDs declared with role != "binder" in the
+    target manifest (e.g. ``frozenset({"A","B","C"})``).
+
+    Empty/parseless PDBs yield (0, 3). Raises ValueError if zero or
+    more than one candidate chain remains after exclusion.
     """
     parser = PDBParser(QUIET=True)
     structure: Structure = parser.get_structure(pdb_path.stem, str(pdb_path))
@@ -260,7 +268,14 @@ def _binder_ca_coords(pdb_path: Path) -> np.ndarray:
     chain_ids = {c.id for c in model.get_chains()}
     if not chain_ids:
         return np.empty((0, 3), dtype=np.float64)
-    chain_id = "A" if "A" in chain_ids else next(iter(chain_ids))
+    candidates = chain_ids - fixed_chains
+    if len(candidates) != 1:
+        raise ValueError(
+            f"{pdb_path}: cannot identify binder chain. "
+            f"PDB chains={sorted(chain_ids)}, fixed_chains={sorted(fixed_chains)}, "
+            f"candidates={sorted(candidates)} (expected exactly 1)"
+        )
+    chain_id = next(iter(candidates))
     chain = model[chain_id]
     coords: list[list[float]] = []
     for residue in chain.get_residues():
@@ -278,6 +293,7 @@ def _geometry_pass(
     pdb_path: Path,
     hotspot_ca_xyz: np.ndarray,
     length_range: tuple[int, int],
+    fixed_chains: frozenset[str],
 ) -> dict[str, Any]:
     """Three-check geometry pass for a candidate binder backbone.
 
@@ -286,8 +302,11 @@ def _geometry_pass(
     3. No internal binder Ca-Ca clash < ``CA_INTERNAL_CLASH_DISTANCE`` A
        (excluding sequential i, i+1 pairs -- those are the trivial backbone
        bond ~3.8 A nominal but can be slightly shorter in some outputs).
+
+    ``fixed_chains`` is forwarded to ``_binder_ca_coords`` for chain
+    identification by exclusion.
     """
-    binder_xyz = _binder_ca_coords(pdb_path)
+    binder_xyz = _binder_ca_coords(pdb_path, fixed_chains)
     binder_length = int(binder_xyz.shape[0])
 
     if binder_length == 0:
@@ -574,13 +593,20 @@ def run_rfdiffusion(
     rfdiff_sha = _git_sha(RFDIFFUSION_DIR)
     ckpt_sha = _file_sha256(ckpt_path)
 
+    fixed_chains = frozenset(
+        chain_id for chain_id, chain in target.chains.items() if chain.role != "binder"
+    )
+
     records: list[dict[str, Any]] = []
     for design_index in range(effective_designs):
         pdb = _expected_pdb_path(designs_dir, design_index, cycle, seeds, mock)
         if not pdb.exists():
             continue
         geom = _geometry_pass(
-            pdb, hotspot_xyz, (target.binder.length_min, target.binder.length_max)
+            pdb,
+            hotspot_xyz,
+            (target.binder.length_min, target.binder.length_max),
+            fixed_chains,
         )
         seed = _compute_seed(cycle, design_index, seeds) if not mock else 0
         records.append(
