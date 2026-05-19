@@ -41,13 +41,14 @@ halt gate.
    design_chains: [D]
    ```
 6. `configs/af2_stage2.yaml`:
-   ```yaml
-   num_recycles: 6
-   fan_in_top_n: 100
+```yaml
+   # Cycle 02 PoC overrides — see "Cycle 02 PoC scaling" section below.
+   num_recycles: 3              # cycle 02 PoC; cycle 03+ promotes top survivors to 6
+   fan_in_top_n: 50             # cycle 02 PoC; raise to 100 once Stage 2 is validated
    halt_cut_ipae_max: 12.0
    halt_cut_iplddt_min: 88.0
    halt_threshold_fraction: 0.10
-   ```
+```
 7. `configs/seeds.yaml` — `formulas.proteinmpnn` and `formulas.af2_fanin`
    keys are canonical; `reserved.cycle_02_proteinmpnn` and
    `reserved.cycle_02_af2_fanin` are assertion bounds.
@@ -79,9 +80,9 @@ results/cycle_NN/stage2/
   "target_id": "wt1_a0201",
   "n_backbones_in": 200,
   "n_sequences_designed": 800,
-  "n_af2_folded": 100,
-  "n_pass_intermediate": 17,
-  "fraction_pass_intermediate": 0.17,
+  "n_af2_folded": 50,
+  "n_pass_intermediate": 8,
+  "fraction_pass_intermediate": 0.16,
   "fraction_pass_tight": 0.04,
   "halt_rule": {
     "name": "fraction_pass_intermediate",
@@ -121,6 +122,24 @@ The halt gate uses `>=` (PASS at boundary). The mock fixture deliberately
 constructs 4/40 pass exactly to exercise this boundary; the corresponding
 test in `tests/test_stage2_designs_halt_gate.py` is a refactor canary.
 
+## Cycle 02 PoC scaling
+
+For the first end-to-end real Stage 2 run (cycle 02), we reduce two
+parameters from the asymptotic spec defaults to keep wall time tractable:
+
+| Parameter         | Asymptotic | Cycle 02 PoC | Rationale |
+|-------------------|------------|--------------|-----------|
+| `num_recycles`    | 6          | **3**        | BindCraft / dl_binder_design default for binder triage. Halves AF2 wall time. Cycle 03+ promotes top survivors to 6 recycles for sharper final metrics. |
+| `fan_in_top_n`    | 100        | **50**       | At expected 10 % intermediate pass rate this yields ~5 passing designs — enough signal to validate the pipeline produces real binders, accepting wider statistical uncertainty on the halt verdict (false-PASS rate ~24 % at true 5 % rate). Cycle 03 raises to 100 for a confident gate verdict. |
+
+Total Stage 2 wall time at cycle 02 settings: **~3.5 h** end-to-end
+(~30 min ProteinMPNN + ~2.5 h AF2 + overhead) vs ~11 h at asymptotic
+defaults.
+
+If cycle 02 PASSES halt at fan-in 50 and you want a firmer verdict before
+committing to cycle 03 architecture changes, re-run AF2 on the remaining
+50 predictions (designs ranked 51–100 by MPNN global_score) — this is a
+cheap follow-on, not a redo.
 ## Mock mode
 
 `uv run python scripts/run_stage2.py --mock --cycle 99` reads Stage 1's
@@ -175,6 +194,22 @@ and `_compute_af2_seed`, both of which assert range membership against
    fails. The splice helper always reads `target.primary.cleaned_pdb`
    from the cycle's `stage0/target.yaml` — same source-of-truth pattern
    as Stage 1.
+   4. **`--use-gpu-relax` skipped during AF2 triage.** Baker lab's
+   `pmhc_fold.py` uses `do_relax=False` during high-throughput screening.
+   Drop the flag from the `colabfold_batch` invocation; saves ~30–50 % wall
+   time. Apply AMBER relax only to top-N final structures in cycle 03+ if
+   BSA quality becomes a concern.
+5. **ProteinMPNN `.fa` output starts with the original (input) sequence.**
+   Aggregator must skip the first record per `.fa` file or you'll get
+   `n_seqs_per_backbone + 1` records instead of `n_seqs_per_backbone`.
+6. **ProteinMPNN outputs the full complex sequence** (all four chains) per
+   record, in PDB chain order. The aggregator must slice the binder
+   portion using the known binder length from the Stage 1 manifest; chains
+   A/B/C in the output match the native sequence and are discarded.
+7. **ColabFold multimer FASTA is colon-separated within a single record**,
+   not multi-record one-chain-per-entry. The multi-record format is
+   DeepMind's original AF2-Multimer convention; `colabfold_batch` requires
+   colons: `>id\n<chainA>:<chainB>:<chainC>:<chainD>\n`. No trailing colon.
 
 ## Done criteria
 
