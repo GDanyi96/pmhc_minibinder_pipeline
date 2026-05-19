@@ -1,8 +1,10 @@
 """Tests for the Stage 1 mock-mode end-to-end + halt gate.
 
 Exercises the halt rule in both directions:
-- Mock fixtures are 8 pass / 2 fail at threshold 0.50 -> observed 0.80 -> PASS.
-- Synthesized 6/10 failure scenario -> observed 0.40 -> FAIL.
+- Mock fixtures are 8 pass / 2 fail at threshold 0.10 -> observed 0.80 -> PASS.
+- Synthesized 0/10 failure scenario -> observed 0.00 -> FAIL.
+- Boundary at the cycle 02 ratio (13/100 = 0.13) -> just above 0.10 -> PASS.
+  Locks the `>=` semantics against future drift (Trap #29).
 """
 
 from __future__ import annotations
@@ -15,8 +17,8 @@ from scripts.run_stage1 import HALT_THRESHOLD, enforce_halt_gate
 
 
 def test_halt_threshold_is_pinned() -> None:
-    """Guards against silent drift away from the calibration-only 0.50."""
-    assert HALT_THRESHOLD == 0.50
+    """Guards against silent drift away from the cycle 02 calibration value."""
+    assert HALT_THRESHOLD == 0.10
 
 
 def test_mock_run_produces_pass_summary(tmp_path: Path) -> None:
@@ -71,11 +73,21 @@ def test_enforce_halt_gate_pass() -> None:
 
 
 def test_enforce_halt_gate_halts_when_below_threshold() -> None:
-    """6 of 10 failures -> observed 0.40 -> FAIL."""
-    status, message = enforce_halt_gate(_synthetic_summary(n_pass=4))
+    """10 of 10 failures -> observed 0.0 -> FAIL."""
+    status, message = enforce_halt_gate(_synthetic_summary(n_pass=0))
     assert status == "halt"
-    assert "0.4" in message
-    assert "0.5" in message
+    assert "0.0" in message
+    assert "0.1" in message
+
+
+def test_enforce_halt_gate_pass_at_cycle02_boundary() -> None:
+    """Cycle 02 ratio 13/100 = 0.13 is just above 0.10 -> PASS.
+
+    Locks the `>=` boundary semantics of the halt rule against future
+    drift; this is the exact ratio that motivated Trap #29.
+    """
+    status, _ = enforce_halt_gate(_synthetic_summary(n_pass=13, n_total=100))
+    assert status == "pass"
 
 
 def test_enforce_halt_gate_halts_when_summary_malformed() -> None:
