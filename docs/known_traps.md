@@ -320,3 +320,44 @@ and either crashes the script or pollutes the JSONL.
 intended spliced PDBs into a fresh `input_pdbs/` directory under the
 per-cycle MPNN work dir, then points `--input_path` at it. Idempotent:
 the directory is removed and recreated on each call.
+
+---
+
+## Trap #26: Writer/reader contract drift hidden by mock-aligned canary
+
+**Cycle**: 02 (Stage 1, cycle 02 run).
+
+**What happened**: Stage 1 cycle 02 ran 200 RFdiffusion designs
+successfully (~10 h GPU). All 200 PDBs and TRBs were written to
+`results/cycle_02/stage1/rfdiffusion/designs/`.
+`stage1_summary.json` reported `n_completed=0` and HALTed. Mock canary
+4/40 at 0.100 was green throughout.
+
+**Why the canary missed it**: `_copy_mock_fixtures` writes mock files
+using the same zero-padded `:05d` filename convention as the reader
+expects, by construction (it strips `mock_` from
+`mock_design_NNNNN.pdb`). Real RFdiffusion writes
+`design_{design_startnum}.pdb` where `design_startnum=seed`, producing
+un-padded variable-digit filenames (`design_2000.pdb`, not
+`design_00000.pdb`). The mock writer and reader were always trivially
+aligned. The real writer was never exercised end-to-end in test.
+
+**Generalization**: Any time a test fixture *produces* the data the
+system-under-test will *consume*, the test only verifies the consumer,
+never the producer. Producer↔consumer contracts must be tested against
+the real producer at least once, even if expensive.
+
+**Detection**: A test that synthesizes outputs using the *real* writer's
+naming convention (seed-based) caught it once written —
+`tests/test_run_rfdiffusion_real_writer.py`.
+
+**Lesson**: Audit every other Stage's mock/real path. If a similar
+pattern exists in Stage 2 (writer = AF2/ProteinMPNN subprocess, reader
+= enumerator), assume similar drift is latent.
+
+**Fix**: `workflow/scripts/run_rfdiffusion.py:_expected_pdb_path` is now
+the single source of truth for the writer↔reader filename contract; both
+the dispatch pre-flight and the post-run enumerator route through it.
+`scripts/run_stage1.py --skip-subprocess` re-enumerates without
+re-invoking RFdiffusion, providing a recovery path that does not waste
+the 10 h of compute.

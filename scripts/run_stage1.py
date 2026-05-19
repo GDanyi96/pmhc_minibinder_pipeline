@@ -88,29 +88,23 @@ def run(
     cycle: int,
     out_dir: Path,
     mock: bool,
-    metrics_only: bool,
+    skip_subprocess: bool,
 ) -> int:
     if mock:
         _ensure_mock_inputs(target_manifest)
 
-    if metrics_only:
-        summary_path = out_dir / "stage1_summary.json"
-        if not summary_path.exists():
-            logger.error("--metrics-only: %s not found", summary_path)
-            return 1
-        logger.info("--metrics-only: re-reading existing %s", summary_path)
-    else:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        summary_path = run_rfdiffusion(
-            target_manifest=target_manifest,
-            rfdiff_yaml=rfdiff_yaml,
-            seeds_yaml=seeds_yaml,
-            cycle=cycle,
-            out_dir=out_dir,
-            mock=mock,
-            halt_threshold=HALT_THRESHOLD,
-            mock_fixtures_dir=MOCK_FIXTURES_DIR if mock else None,
-        )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = run_rfdiffusion(
+        target_manifest=target_manifest,
+        rfdiff_yaml=rfdiff_yaml,
+        seeds_yaml=seeds_yaml,
+        cycle=cycle,
+        out_dir=out_dir,
+        mock=mock,
+        halt_threshold=HALT_THRESHOLD,
+        mock_fixtures_dir=MOCK_FIXTURES_DIR if mock else None,
+        skip_subprocess=skip_subprocess,
+    )
 
     summary = json.loads(summary_path.read_text())
     status, message = enforce_halt_gate(summary)
@@ -136,9 +130,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--mock", action="store_true")
     parser.add_argument(
-        "--metrics-only",
+        "--skip-subprocess",
         action="store_true",
-        help="Skip RFdiffusion subprocess; re-read existing stage1_summary.json.",
+        help=(
+            "Skip the RFdiffusion subprocess (and mock-fixture copy); "
+            "re-enumerate existing design_*.pdb files in out-dir/designs "
+            "and rewrite stage1_summary.json. Recovery path for cycle 02 "
+            "writer/reader filename drift (see docs/known_traps.md)."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -152,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         cycle=args.cycle,
         out_dir=out_dir,
         mock=args.mock,
-        metrics_only=args.metrics_only,
+        skip_subprocess=args.skip_subprocess,
     )
 
 

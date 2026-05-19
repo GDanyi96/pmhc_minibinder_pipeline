@@ -14,7 +14,6 @@ rule rfdiffusion:
     output:
         summary=str(RESULTS / "stage1" / "rfdiffusion" / "stage1_summary.json"),
         designs_jsonl=str(RESULTS / "stage1" / "rfdiffusion" / "designs.jsonl"),
-        sample_pdb=str(RESULTS / "stage1" / "rfdiffusion" / "designs" / "design_00000.pdb"),
     params:
         mock=MOCK,
         cycle=CYCLE,

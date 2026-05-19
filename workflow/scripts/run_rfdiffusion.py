@@ -199,6 +199,28 @@ def _build_contigmap(target: ResolvedTarget, cleaned_pdb: Path) -> str:
     return " ".join(segments)
 
 
+def _expected_pdb_path(
+    designs_dir: Path,
+    design_index: int,
+    cycle: int,
+    seeds: SeedsConfig,
+    mock: bool,
+) -> Path:
+    """Resolve the on-disk PDB path produced by writer-mode for a given index.
+
+    Single source of truth for the writer/reader contract. Real RFdiffusion
+    names files by ``inference.design_startnum`` (=seed), producing
+    ``design_{seed}.pdb`` with variable digit count. Mock fixtures use the
+    zero-padded ``:05d`` design-index convention from ``_make_fixtures.py``.
+    Centralizing here prevents the cycle-02 drift recurrence (see
+    docs/known_traps.md).
+    """
+    if mock:
+        return designs_dir / f"design_{design_index:05d}.pdb"
+    seed = _compute_seed(cycle, design_index, seeds)
+    return designs_dir / f"design_{seed}.pdb"
+
+
 def _compute_seed(cycle: int, design_index: int, seeds: SeedsConfig) -> int:
     """Apply the rfdiffusion seed formula, enforce the cycle's reserved range."""
     expected = "cycle * 1000 + design_index"
@@ -478,12 +500,19 @@ def run_rfdiffusion(
     mock: bool,
     halt_threshold: float = 0.50,
     mock_fixtures_dir: Path | None = None,
+    skip_subprocess: bool = False,
 ) -> Path:
     """Run Stage 1 RFdiffusion and emit stage1_summary.json.
 
     Returns the path to the emitted summary. The orchestrator
     (``scripts/run_stage1.py``) is responsible for translating that into
     a process exit code via halt-gate enforcement.
+
+    When ``skip_subprocess`` is True, neither the RFdiffusion subprocess nor
+    the mock-fixture copy runs; the enumerator reads whatever ``design_*.pdb``
+    files already exist in ``out_dir/designs`` and rebuilds the summary.
+    Used for recovery after a writer/reader filename mismatch (cycle 02
+    incident; see docs/known_traps.md).
     """
     started_at = time.time()
 
@@ -505,7 +534,15 @@ def run_rfdiffusion(
     designs_dir = out_dir / "designs"
     designs_dir.mkdir(parents=True, exist_ok=True)
 
-    if mock:
+    if skip_subprocess:
+        logger.info(
+            "skip_subprocess: re-enumerating existing designs in %s (cycle=%d, num_designs=%d)",
+            designs_dir,
+            cycle,
+            num_designs,
+        )
+        effective_designs = num_designs
+    elif mock:
         fixtures_dir = mock_fixtures_dir or Path("tests/fixtures/stage1")
         n_copied = _copy_mock_fixtures(designs_dir, fixtures_dir)
         logger.info("mock: copied %d fixture PDBs from %s", n_copied, fixtures_dir)
@@ -526,7 +563,7 @@ def run_rfdiffusion(
         else:
             for design_index in range(num_designs):
                 seed = _compute_seed(cycle, design_index, seeds)
-                expected_pdb = designs_dir / f"design_{design_index:05d}.pdb"
+                expected_pdb = _expected_pdb_path(designs_dir, design_index, cycle, seeds, mock)
                 if expected_pdb.exists():
                     continue
                 _run_inference_per_design(
@@ -539,7 +576,7 @@ def run_rfdiffusion(
 
     records: list[dict[str, Any]] = []
     for design_index in range(effective_designs):
-        pdb = designs_dir / f"design_{design_index:05d}.pdb"
+        pdb = _expected_pdb_path(designs_dir, design_index, cycle, seeds, mock)
         if not pdb.exists():
             continue
         geom = _geometry_pass(

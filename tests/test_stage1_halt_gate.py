@@ -84,16 +84,30 @@ def test_enforce_halt_gate_halts_when_summary_malformed() -> None:
     assert "missing halt_rule" in message
 
 
-def test_metrics_only_replays_existing_summary(tmp_path: Path) -> None:
+def test_skip_subprocess_reenumerates_existing_mock_fixtures(tmp_path: Path) -> None:
+    """``--skip-subprocess --mock`` rebuilds the summary from pre-existing
+    fixtures in designs/ without re-copying."""
     out_dir = tmp_path / "rfdiffusion"
     rc = run_stage1.main(["--mock", "--cycle", "99", "--out-dir", str(out_dir)])
     assert rc == 0
-    rc2 = run_stage1.main(["--mock", "--cycle", "99", "--out-dir", str(out_dir), "--metrics-only"])
+    summary_path = out_dir / "stage1_summary.json"
+    summary_path.unlink()  # force the re-enumeration to actually do work
+
+    rc2 = run_stage1.main(
+        ["--mock", "--cycle", "99", "--out-dir", str(out_dir), "--skip-subprocess"]
+    )
     assert rc2 == 0
+    assert summary_path.exists()
+    summary = json.loads(summary_path.read_text())
+    assert summary["n_completed"] == 10
+    assert summary["n_geometry_pass"] == 8
 
 
-def test_metrics_only_errors_when_summary_missing(tmp_path: Path) -> None:
+def test_skip_subprocess_halts_when_no_files_present(tmp_path: Path) -> None:
+    """Empty designs_dir + --skip-subprocess -> n_completed=0 -> HALT."""
     out_dir = tmp_path / "rfdiffusion_empty"
     out_dir.mkdir()
-    rc = run_stage1.main(["--mock", "--cycle", "99", "--out-dir", str(out_dir), "--metrics-only"])
+    rc = run_stage1.main(
+        ["--mock", "--cycle", "99", "--out-dir", str(out_dir), "--skip-subprocess"]
+    )
     assert rc == 1
