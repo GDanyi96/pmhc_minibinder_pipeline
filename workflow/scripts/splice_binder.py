@@ -1,17 +1,22 @@
 # mypy: disable-error-code="no-untyped-call,attr-defined,no-any-return,misc"
 """Stage 2 designs — splice a Stage 1 binder onto the cleaned pMHC.
 
-Stage 1 (RFdiffusion) emits each binder as chain "A" inside its own
-single-chain PDB. Stage 2 ProteinMPNN expects a 4-chain complex where the
-fixed scaffold (A=HC, B=beta2m, C=peptide) is the cleaned pMHC and the
-designed chain is D=binder. This module reads both PDBs, renames the
-Stage 1 chain "A" to "D", composes the four chains into one structure
-with per-chain residue renumbering starting at 1, and writes the spliced
-PDB to disk.
+Stage 1 (RFdiffusion) emits a 4-chain complex (A=HC, B=beta2m, C=peptide,
+D=binder) under the cycle 02 contig
+``[A1-275/0 B0-99/0 C1-9/0 70-110]``. The motif chains A/B/C are passed
+through unchanged by RFdiffusion and should match the canonical cleaned
+pMHC by construction (motif RMSD ~0.12 Å verified empirically on cycle
+02). Stage 2 ProteinMPNN expects a 4-chain complex where the fixed
+scaffold (A=HC, B=beta2m, C=peptide) is the *canonical* cleaned pMHC and
+the designed chain is D=binder. This module extracts chain D from the
+Stage 1 PDB, combines it with A/B/C from the cleaned pMHC, renumbers
+each chain 1..N, and writes the composed PDB to disk.
 
-Reference: docs/known_traps.md trap #17 — skipping the rename produces a
-3-chain AF2 input where the binder is silently treated as HC, yielding
-garbage iPAE.
+References: docs/known_traps.md trap #17 (without chain D the AF2
+input is silently treated as 3-chain HC+B2M+peptide, yielding garbage
+iPAE); trap #28 (RFdiffusion writes binder as the next-free letter, not
+chain A — false belief previously embedded in this module); trap #29
+(the four-chain rewrite below).
 """
 
 from __future__ import annotations
@@ -23,9 +28,10 @@ from Bio.PDB.Chain import Chain
 from Bio.PDB.Model import Model
 from Bio.PDB.Structure import Structure
 
-_STAGE1_BINDER_CHAIN = "A"
+_STAGE1_BINDER_CHAIN = "D"
 _TARGET_BINDER_CHAIN = "D"
 _PMHC_CHAINS = ("A", "B", "C")
+_ALLOWED_STAGE1_CHAINS = frozenset({"A", "B", "C", "D"})
 
 
 def _standard_residues(chain: Chain) -> list:  # type: ignore[type-arg]
@@ -56,21 +62,24 @@ def splice_binder_onto_pmhc(
 ) -> None:
     """Compose a 4-chain (A=HC, B=beta2m, C=peptide, D=binder) PDB.
 
-    Asserts the stage1 PDB has exactly one chain (the binder) and the
-    cleaned pMHC has exactly A/B/C. Output chains are renumbered 1..N
-    per chain — AF2 multimer input contract.
+    Asserts the stage1 PDB contains a chain D (the binder) and no
+    chains outside {A,B,C,D}; the chains A/B/C present in the stage1
+    PDB are ignored in favour of the canonical cleaned pMHC. The
+    cleaned pMHC must have exactly A/B/C (and no D). Output chains are
+    renumbered 1..N per chain — AF2 multimer input contract.
     """
     s1_model = _load_first_model(stage1_pdb)
-    s1_chains = list(s1_model.get_chains())
-    if len(s1_chains) != 1:
-        raise ValueError(
-            f"{stage1_pdb}: expected exactly 1 chain (the binder), found "
-            f"{[c.id for c in s1_chains]}"
-        )
-    if s1_chains[0].id != _STAGE1_BINDER_CHAIN:
+    s1_chain_ids = {c.id for c in s1_model.get_chains()}
+    if _STAGE1_BINDER_CHAIN not in s1_chain_ids:
         raise ValueError(
             f"{stage1_pdb}: expected binder on chain {_STAGE1_BINDER_CHAIN!r}, "
-            f"found chain {s1_chains[0].id!r}"
+            f"found chains {sorted(s1_chain_ids)}"
+        )
+    unexpected = s1_chain_ids - _ALLOWED_STAGE1_CHAINS
+    if unexpected:
+        raise ValueError(
+            f"{stage1_pdb}: unexpected chain(s) {sorted(unexpected)}; "
+            f"allowed chains are {sorted(_ALLOWED_STAGE1_CHAINS)}"
         )
 
     pmhc_model = _load_first_model(cleaned_pmhc_pdb)
@@ -87,8 +96,7 @@ def splice_binder_onto_pmhc(
             f"found {sorted(pmhc_chain_ids)}"
         )
 
-    binder_chain = s1_chains[0]
-    binder_chain.id = _TARGET_BINDER_CHAIN
+    binder_chain = s1_model[_STAGE1_BINDER_CHAIN]
 
     out_structure = Structure(out_pdb.stem)
     out_model = Model(0)

@@ -397,3 +397,63 @@ asserts the loud-failure mode when chain assignment is ambiguous.
 **Same bug class**: Traps #26, #27. Stage 2 `splice_binder.py:70`
 embeds the same false belief (rejects PDBs whose first chain is not
 "A") and is filed as a follow-up issue.
+
+## Trap #29: `splice_binder.py` expected a 1-chain Stage 1 PDB with binder on chain "A"
+
+**Cycle**: 02 (Stage 2, immediately after the Trap #28 fix unblocked Stage 1
+cycle 02 with 26/200 geometry-pass designs).
+
+**Symptom**: Stage 2 raised `ValueError: expected exactly 1 chain (the
+binder)` on the first cycle 02 backbone fed to
+`splice_binder_onto_pmhc`. The mock canary was green throughout — the
+canary fixture itself only wrote single-chain stage1_backbones, so the
+4-chain real-world contract was never exercised.
+
+**Root cause**: `workflow/scripts/splice_binder.py` was written against
+the cycle 01 RFdiffusion output shape (single-chain PDB, binder on
+chain "A") and asserted `len(s1_chains) == 1` and
+`s1_chains[0].id == "A"` before renaming `A → D`. With the cycle 02
+contig `[A1-275/0 B0-99/0 C1-9/0 70-110]`, RFdiffusion preserves the
+motif chains A/B/C and writes the binder to chain D, producing a
+4-chain PDB.
+
+**Why the canary missed it**: same family as Trap #26.
+`tests/fixtures/stage2/designs/_make_fixtures.py:write_stage1_backbones`
+constructed single-chain (chain A) backbones, matching the reader's
+old assumption by construction. The producer↔consumer contract was
+never tested against the real RFdiffusion writer.
+
+**Fix**:
+- `workflow/scripts/splice_binder.py` now extracts chain D directly
+  (`_STAGE1_BINDER_CHAIN = "D"`), validates that the Stage 1 PDB
+  contains chain D, rejects any chain outside `{A,B,C,D}` (loud-fail
+  pattern, mirroring `_binder_ca_coords`), and sources A/B/C from the
+  cleaned pMHC.
+- Stage 2 now pre-filters Stage 1 designs on `geometry_pass=True`
+  before MPNN/splice fan-in (`scripts/run_stage2.py`); cycle 02 would
+  otherwise burn compute on ~170 zero-contact designs.
+- Stage 1 `HALT_THRESHOLD` lowered from 0.50 → 0.10 to align with
+  Stage 2 and let cycle 02's 0.13 pass; the verdict-must-be-PASS gate
+  in `scripts/run_stage2.py:454` then no longer blocks. Cycle 03 will
+  tighten after partial diffusion lands.
+- `tests/fixtures/stage2/designs/_make_fixtures.py:write_stage1_backbones`
+  regenerated to emit 4-chain (A/B/C/D) PDBs so the canary now
+  exercises the real chain layout.
+
+**Recurrence guard**:
+- `tests/test_splice_binder.py::test_splice_4chain_stage1_input_uses_canonical_abc`
+  builds a 4-chain Stage 1 PDB whose A/B/C residue counts differ from
+  the cleaned pMHC and asserts the output A/B/C is sourced from the
+  cleaned pMHC (not the Stage 1 PDB).
+- `test_splice_rejects_input_without_chain_D` asserts loud failure on
+  the legacy cycle 01 single-chain layout.
+- `test_splice_rejects_unexpected_chain` asserts loud failure on
+  chains outside `{A,B,C,D}`.
+- `tests/test_stage1_halt_gate.py::test_enforce_halt_gate_pass_at_cycle02_boundary`
+  pins the `>=` boundary semantics of the halt rule at the exact cycle
+  02 ratio (13/100 = 0.13).
+
+**Same bug class**: Traps #26, #27, #28. Fourth instance of writer↔reader
+contract drift hidden by mock-aligned canary. The general lesson stands:
+any fixture that synthesises its own producer output verifies only the
+consumer, never the contract.

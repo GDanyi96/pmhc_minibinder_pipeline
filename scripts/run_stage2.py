@@ -467,23 +467,49 @@ def run(
         backbone_dir = stage1_summary_path.parent / "stage1_backbones"
     else:
         backbone_dir = stage1_summary_path.parent / "designs"
-    backbones = sorted(backbone_dir.glob("design_*.pdb"))
-    if not backbones:
+    all_backbones = sorted(backbone_dir.glob("design_*.pdb"))
+    if not all_backbones:
         logger.error("no stage 1 backbones found under %s", backbone_dir)
+        return 1
+
+    # Pre-filter on geometry_pass before MPNN/splice fan-in. Without
+    # this, cycle 02 would burn compute on ~170 zero-contact designs
+    # and pollute AF2's top-N selection (Trap #29).
+    stage1_designs_jsonl = stage1_summary_path.parent / "designs.jsonl"
+    binder_lengths: dict[str, int] = {}
+    if stage1_designs_jsonl.exists():
+        all_records = [
+            json.loads(line)
+            for line in stage1_designs_jsonl.read_text().splitlines()
+            if line.strip()
+        ]
+        pass_ids = {r["design_id"] for r in all_records if r.get("geometry_pass")}
+        backbones = [b for b in all_backbones if b.stem in pass_ids]
+        logger.info(
+            "Stage 2 input filtered: %d/%d Stage 1 designs pass geometry_pass=True",
+            len(backbones),
+            len(all_backbones),
+        )
+        if not backbones:
+            logger.error(
+                "no geometry-pass designs available for Stage 2; halt "
+                "(checked %d Stage 1 records)",
+                len(all_records),
+            )
+            return 1
+        if not mock:
+            binder_lengths = _load_binder_lengths(stage1_designs_jsonl)
+    elif mock:
+        # Mock fixture variant without a designs.jsonl: trust the glob.
+        backbones = all_backbones
+    else:
+        logger.error("stage1 designs manifest missing: %s", stage1_designs_jsonl)
         return 1
 
     out_dir.mkdir(parents=True, exist_ok=True)
     spliced_dir = out_dir / "proteinmpnn_designs" / "spliced"
     spliced_pdbs = _splice_all(backbones, cleaned_pmhc, spliced_dir)
     (spliced_dir / ".done").touch()
-
-    binder_lengths: dict[str, int] = {}
-    if not mock:
-        stage1_designs_jsonl = stage1_summary_path.parent / "designs.jsonl"
-        if not stage1_designs_jsonl.exists():
-            logger.error("stage1 designs manifest missing: %s", stage1_designs_jsonl)
-            return 1
-        binder_lengths = _load_binder_lengths(stage1_designs_jsonl)
 
     per_design_root = out_dir / "proteinmpnn_designs" / "per_design"
     if mock:
@@ -527,7 +553,7 @@ def run(
 
     records.sort(key=_rank_key)
     n_total = len(records)
-    fan_in_top_n = min(n_total, 40) if mock else int(af2_cfg["fan_in_top_n"])
+    fan_in_top_n = min(n_total, 40) if mock else min(int(af2_cfg["fan_in_top_n"]), n_total)
     top_records = records[:fan_in_top_n]
 
     predictions_root = out_dir / "af2_designs" / "predictions"

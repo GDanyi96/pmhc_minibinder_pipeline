@@ -119,13 +119,30 @@ def write_mock_target(path: Path) -> None:
 
 
 def write_stage1_backbones(out_dir: Path) -> list[Path]:
-    """10 single-chain (chain "A") binder PDBs of varying small length."""
+    """10 four-chain (A=HC, B=beta2m, C=peptide, D=binder) PDBs.
+
+    Mirrors the cycle 02 RFdiffusion output layout: the motif chains
+    A/B/C are passed through unchanged, and the designed binder is
+    written to chain D. A/B/C atom counts match the cleaned pMHC
+    fixture so the splicer's "A/B/C ignored, sourced from cleaned"
+    contract is exercised end-to-end (Trap #29).
+    """
+    pmhc_atoms: list[tuple[str, int, tuple[float, float, float]]] = [
+        ("A", 65, (0.0, 0.0, 0.0)),
+        ("A", 66, (3.8, 0.0, 0.0)),
+        ("B", 1, (20.0, 0.0, 0.0)),
+        ("B", 2, (20.0, 3.8, 0.0)),
+        ("C", 1, (0.0, 0.0, 5.0)),
+        ("C", 4, (3.0, 3.0, 5.0)),
+    ]
     paths: list[Path] = []
     for i in range(N_BACKBONES):
         resnums = list(range(1, 3 + i % 3))  # 3..5 residues
-        atoms = [("A", n, (10.0 + n * 0.1, 5.0 + i * 0.2, 0.0)) for n in resnums]
+        binder_atoms: list[tuple[str, int, tuple[float, float, float]]] = [
+            ("D", n, (10.0 + n * 0.1, 5.0 + i * 0.2, 0.0)) for n in resnums
+        ]
         path = out_dir / f"design_{i:05d}.pdb"
-        _write_pdb(path, atoms)
+        _write_pdb(path, pmhc_atoms + binder_atoms)
         paths.append(path)
     return paths
 

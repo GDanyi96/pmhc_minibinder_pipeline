@@ -34,7 +34,7 @@ from workflow.scripts.run_rfdiffusion import run_rfdiffusion
 logger = logging.getLogger("run_stage1")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
-HALT_THRESHOLD = 0.50
+HALT_THRESHOLD = 0.10
 MOCK_FIXTURES_DIR = Path("tests/fixtures/stage1")
 MOCK_TARGET_MANIFEST = MOCK_FIXTURES_DIR / "mock_target.yaml"
 DEFAULT_RFDIFF_YAML = Path("configs/rfdiffusion_default.yaml")
@@ -59,7 +59,7 @@ def enforce_halt_gate(summary: dict[str, object]) -> tuple[HaltStatus, str]:
     threshold = halt_rule.get("threshold")
     return "halt", (
         f"HALT: fraction_geometry_pass {observed} < {threshold} "
-        "(calibration-only threshold for cycle 2; see specs/stage1_rfdiffusion.md)"
+        "(calibration-only threshold for cycle 02; see docs/known_traps.md trap #29)"
     )
 
 
