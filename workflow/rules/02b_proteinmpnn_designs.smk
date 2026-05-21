@@ -12,7 +12,7 @@ rule stage2_designs:
     input:
         stage1_summary=str(RESULTS / "stage1" / "rfdiffusion" / "stage1_summary.json"),
         target_yaml=str(RESULTS / "stage0" / "target.yaml"),
-        mpnn_cfg="configs/proteinmpnn_default.yaml",
+        mpnn_cfg=MPNN_DESIGNS_CONFIG,
         af2_cfg="configs/af2_stage2.yaml",
         seeds="configs/seeds.yaml",
     output:
