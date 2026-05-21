@@ -285,3 +285,68 @@ in their native chain layout.
   `results/cycle_02/stage1/rfdiffusion/samples/` and committed. Bulk
   designs stay gitignored. Empirical pass rate logged for cycle 3
   calibration.
+
+---
+
+## Cycle 03: partial-diffusion sub-runs
+
+Cycle 02 produced one hero out of 200 designs and a placement deficit (~65 %
+of designs made zero hotspot contact). Cycle 03 replaces de-novo generation
+with **partial diffusion** (BAKER_LAB_2025's privileged-scaffold-reuse
+pathway) from two seeded sub-runs that merge into the canonical Stage 1
+output Stage 2 already consumes. Selected by `stage1_mode` (Snakefile;
+`partial` when cycle ≥ 3, overridable via `--config stage1_mode=`). A
+conditional `ruleorder` makes `stage1_merge` win over the legacy
+`rule rfdiffusion`; the two produce the same canonical outputs.
+
+### Sub-run A — BAKER scaffold library (`configs/rfdiffusion_subrun_a.yaml`)
+
+1. **Align** each BAKER `scaf*.pdb` target chain onto `3hpj_clean.pdb`
+   (`workflow/scripts/align_scaffolds.py`, a BioPython `Superimposer`
+   equivalent of BAKER's `align_chainB.py` — no Rosetta, no upstream-clone
+   dependency).
+2. **Partial-diffuse** one binder backbone per aligned scaffold
+   (`workflow/scripts/partial_diffuse.py`), `partial_T = 15`,
+   `noise_scale_ca = 0`. ~150 backbones.
+
+`partial_T = 15` (vs 10 for sub-run B): BAKER scaffolds are foreign backbones
+that need more remodeling to adapt to the WT1/A\*02:01 interface. This is a
+conservative blind default — there is no published optimum for pMHC scaffold
+reuse; recalibrate in cycle 04 from empirical pass rates.
+
+### Sub-run B — design_2079 hero (`configs/rfdiffusion_subrun_b.yaml`)
+
+Partial-diffuse `num_designs` (~30) binder backbones from the cycle-02 hero
+**full complex** seed (`data/seeds/design_2079_binder.pdb` = the hero chain D
+stitched onto `3hpj_clean.pdb` A/B/C — partial diffusion needs the target as
+the fixed motif). `partial_T = 10` (gentle local remodeling that preserves
+the validated placement).
+
+### Merge (`scripts/merge_stage1_subruns.py`, `rule stage1_merge`)
+
+Concatenates both sub-runs' `designs.jsonl`, copies PDBs into
+`stage1/rfdiffusion/designs/`, and runs the geometry-pass halt gate once on
+the merged set (PASS when `fraction_geometry_pass ≥ 0.10`, calibration-only;
+placement quality is now enforced separately by the Stage 2 contact filter).
+
+### Seeds (`configs/seeds.yaml`)
+
+`cycle_03_rfdiffusion: [3000, 3199]`. Sub-run A takes indices 0–149
+(3000–3149); sub-run B takes 150+ (3150+) via per-config `seed_offset`, so the
+two occupy disjoint slots within the cycle's reserved range.
+
+### Pod-only inputs
+
+The BAKER library and the hero prediction are gitignored / pod-only.
+`workflow/scripts/setup_cycle03_inputs.py` (run once on the pod after pull)
+symlinks the scaffolds into `data/scaffolds/baker_library/` and stitches the
+seed complex into `data/seeds/`. CC develops against mock fixtures
+(`tests/fixtures/baker_library_mock/`, `tests/fixtures/design_2079_mock_seed.pdb`).
+
+### Mock
+
+`snakemake --config mock=true cycle=99 -j1` runs the whole partial-diffusion
+DAG with no GPU: sub-runs synthesize geometry-passing 4-chain designs from the
+reference motif, merge halts PASS, Stage 2 proceeds. Unit coverage in
+`tests/test_align_scaffolds.py`, `tests/test_partial_diffuse.py`,
+`tests/test_stage1_subruns.py`.

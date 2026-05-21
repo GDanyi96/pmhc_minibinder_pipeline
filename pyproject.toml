@@ -56,6 +56,9 @@ packages = ["workflow"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Notebooks are exploratory analysis artifacts (committed for the portfolio
+# narrative), not pipeline source; don't gate CI lint on them.
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
