@@ -318,10 +318,19 @@ def metrics_for_design(pred_dir: Path) -> dict[str, Any]:
     ipae = compute_ipae_interface(pae, chain_ids, distances)
     iplddt = compute_iplddt_interface(plddt, chain_ids, distances)
     bsa = compute_bsa(rank_pdb)
+    # BAKER_LAB_2025's ppi_pae_int is our combined iPAE (D <-> A+B+C). Cycle
+    # 03 decomposes it into peptide- and MHC-facing sub-metrics so we can
+    # tell binders that contact the peptide (the specificity-bearing surface)
+    # apart from binders that only grip the conserved MHC framework.
+    ppi_pae_int_peptide = compute_ipae_interface(pae, chain_ids, distances, target=("C",))
+    ppi_pae_int_mhc = compute_ipae_interface(pae, chain_ids, distances, target=("A", "B"))
     return {
         "ipae": ipae,
         "iplddt": iplddt,
         "bsa": bsa,
+        "ppi_pae_int": ipae,
+        "ppi_pae_int_peptide": ppi_pae_int_peptide,
+        "ppi_pae_int_mhc": ppi_pae_int_mhc,
         "rank_001_pdb": str(rank_pdb),
         "scores_json": str(scores_json),
     }

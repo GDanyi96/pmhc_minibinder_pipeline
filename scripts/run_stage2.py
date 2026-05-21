@@ -258,6 +258,11 @@ def _run_real_proteinmpnn(
         "--save_score",
         "1",
     ]
+    # Cycle 03: penalize RFdiffusion's Ala-heavy compositional prior (Trap
+    # #30) via --bias_AA_jsonl when the MPNN config points at a bias file.
+    bias_jsonl = cfg.get("bias_AA_jsonl")
+    if bias_jsonl:
+        run_cmd += ["--bias_AA_jsonl", str(bias_jsonl)]
     logger.info("ProteinMPNN run: %s", run_cmd)
     subprocess.run(run_cmd, check=True, env={**os.environ})
 
@@ -358,15 +363,19 @@ def _compute_metrics_for_predictions(
             m = compute_metrics.metrics_for_control(pred_dir, None)
         else:
             m = compute_metrics.metrics_for_design(pred_dir)
-        metric_records.append(
-            {
-                "design_id": rec["design_id"],
-                "seq_id": rec["seq_id"],
-                "iPAE": m["ipae"],
-                "ipLDDT": m["iplddt"],
-                "BSA": m["bsa"],
-            }
-        )
+        record = {
+            "design_id": rec["design_id"],
+            "seq_id": rec["seq_id"],
+            "iPAE": m["ipae"],
+            "ipLDDT": m["iplddt"],
+            "BSA": m["bsa"],
+        }
+        # Decomposed iPAE sub-metrics are only produced by the canonical
+        # interface path (metrics_for_design); the mock control path omits them.
+        if "ppi_pae_int_peptide" in m:
+            record["ppi_pae_int_peptide"] = m["ppi_pae_int_peptide"]
+            record["ppi_pae_int_mhc"] = m["ppi_pae_int_mhc"]
+        metric_records.append(record)
     return metric_records
 
 
