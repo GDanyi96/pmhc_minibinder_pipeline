@@ -1,0 +1,19 @@
+# ProteinMPNN sampling config for the Cycle 03 designs pipeline.
+#
+# Same complex-mode contract as proteinmpnn_default.yaml (T=0.1, 4 seqs/
+# backbone, A/B/C fixed, only D=binder designed) but adds an amino-acid
+# bias to counteract RFdiffusion's Ala-heavy compositional prior (Trap #30).
+# BAKER scaf*.pdb crude sequences are ~38% Ala and our hero was ~40% Ala;
+# that is the diffusion model's placeholder prior, not signal, so we nudge
+# MPNN away from Ala and toward the charged/hydrophobic residues common in
+# BAKER's redesigned binders (Glu/Leu/Arg).
+#
+# bias_AA_jsonl points at a ProteinMPNN --bias_AA_jsonl file: a single-line
+# JSON dict mapping one-letter AA -> additive logit bias.
+
+model: v_48_020
+sampling_temperature: 0.1
+n_seqs_per_backbone: 4
+fixed_chains: [A, B, C]
+design_chains: [D]
+bias_AA_jsonl: configs/proteinmpnn_bias_aa.json

@@ -1,0 +1,29 @@
+# Cycle 03 -- Sub-run B: partial diffusion from our own cycle-02 hero.
+#
+# The seed is the cycle-02 hero binder (design_2079_seq00, 99aa 4-helix
+# bundle, iPAE 6.41) stitched as chain D onto the canonical 3hpj_clean.pdb
+# (A=HC, B=beta2m, C=peptide). The full complex -- not the binder alone --
+# is the RFdiffusion input_pdb, so the target chains act as the fixed motif
+# and partial diffusion only remodels the binder. The stitched complex is
+# produced by workflow/scripts/setup_cycle03_inputs.py (pod-side).
+#
+# partial_T = 10 here (vs 15 for sub-run A): the hero already binds our
+# exact target, so we want gentle local remodeling that preserves the
+# placement, not a large excursion. 10 is RFdiffusion's lower
+# partial-diffusion example value and a conservative blind default --
+# recalibrate in cycle 04 once empirical pass rates are known.
+
+inference:
+  num_designs: 30
+  ckpt_override_path: /workspace/models/RFdiffusion/Complex_base_ckpt.pt
+  input_pdb: data/seeds/design_2079_binder.pdb
+
+denoiser:
+  noise_scale_ca: 0       # HADRUP_JENKINS_2025
+  noise_scale_frame: 0
+
+partial_T: 10
+
+# Sub-run B occupies indices 150..179 in the cycle's reserved rfdiffusion
+# range, immediately after sub-run A's 150 slots.
+seed_offset: 150

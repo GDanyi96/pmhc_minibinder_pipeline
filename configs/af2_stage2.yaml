@@ -4,11 +4,13 @@
 # 100-ish at intermediate cut). Halt threshold is calibration-only for
 # cycle 2; tighten in cycle 3 once partial diffusion lands.
 
-# Cycle 02 PoC overrides per specs/stage2_proteinmpnn_af2.md.
-# Cycle 03+ promotes survivors to num_recycles=6 and raises fan_in_top_n
-# to 100 once Stage 2 produces real binders.
-num_recycles: 3
-fan_in_top_n: 50
-halt_cut_ipae_max: 12.0
+# Cycle 03 settings (was cycle-02 PoC: num_recycles=3, fan_in_top_n=50,
+# halt_cut_ipae_max=12.0). Now that partial diffusion lands real binders we
+# promote the funnel to the asymptotic spec: 6 recycles for sharper final
+# metrics, top-100 fan-in for a confident halt verdict, and a tighter
+# intermediate iPAE cut of 10 A (was 12). See specs/stage2_proteinmpnn_af2.md.
+num_recycles: 6
+fan_in_top_n: 100
+halt_cut_ipae_max: 10.0
 halt_cut_iplddt_min: 88.0
 halt_threshold_fraction: 0.10
