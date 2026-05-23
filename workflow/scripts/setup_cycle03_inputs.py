@@ -34,7 +34,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from workflow.scripts import splice_binder
+from workflow.scripts import prep_baker_target, splice_binder
 
 logger = logging.getLogger("setup_cycle03_inputs")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -45,8 +45,19 @@ DEFAULT_HERO_PRED_GLOB = (
     "design_2079_seq00_unrelaxed_rank_001_*.pdb"
 )
 DEFAULT_REFERENCE_PDB = Path("data/targets/3hpj_clean.pdb")
+DEFAULT_TRUNCATED_PDB = Path("data/targets/3hpj_baker_truncated.pdb")
 DEFAULT_SCAFFOLD_DEST = Path("data/scaffolds/baker_library")
 DEFAULT_SEED_OUT = Path("data/seeds/design_2079_binder.pdb")
+
+
+def build_truncated_target(reference_pdb: Path, truncated_out: Path) -> None:
+    if truncated_out.exists():
+        logger.info("truncated target already present, skipping: %s", truncated_out)
+        return
+    if not reference_pdb.exists():
+        raise FileNotFoundError(f"reference {reference_pdb} missing; run prep_target.py first")
+    prep_baker_target.truncate_target(reference_pdb, truncated_out)
+    logger.info("wrote BAKER-format truncated target: %s", truncated_out)
 
 
 def symlink_scaffolds(src_dir: Path, dest_dir: Path) -> int:
@@ -85,10 +96,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scaffold-dest", type=Path, default=DEFAULT_SCAFFOLD_DEST)
     parser.add_argument("--hero-glob", default=DEFAULT_HERO_PRED_GLOB)
     parser.add_argument("--reference-pdb", type=Path, default=DEFAULT_REFERENCE_PDB)
+    parser.add_argument("--truncated-out", type=Path, default=DEFAULT_TRUNCATED_PDB)
     parser.add_argument("--seed-out", type=Path, default=DEFAULT_SEED_OUT)
     args = parser.parse_args(argv)
 
     symlink_scaffolds(args.baker_scaffolds, args.scaffold_dest)
+    build_truncated_target(args.reference_pdb, args.truncated_out)
     build_seed_complex(args.hero_glob, args.reference_pdb, args.seed_out)
     return 0
 

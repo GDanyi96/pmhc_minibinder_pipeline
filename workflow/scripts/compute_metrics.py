@@ -51,6 +51,17 @@ CHAIN_ORDER = ("A", "B", "C", "D")
 DEFAULT_SCORES_GLOB = "*_scores_rank_001*.json"
 DEFAULT_PDB_GLOB = "*_unrelaxed_rank_001*.pdb"
 
+# Decomposed-iPAE chain assignments per target layout. Cycle 03 sub-run A and
+# its --target=truncated controls fold the binder against the BAKER groove-only
+# fragment (HLA[1:180] + peptide, no beta2m / alpha3), which ColabFold emits as
+# a 3-chain complex A=HLA, B=peptide, C=binder -- not the 4-chain full layout.
+# "full" preserves the canonical A=HC, B=beta2m, C=peptide, D=binder mapping
+# (no behavior change for every existing caller).
+LAYOUT_CHAINS: dict[str, dict[str, Any]] = {
+    "full": {"binder": "D", "peptide": ("C",), "mhc": ("A", "B"), "combined": ("A", "B", "C")},
+    "truncated": {"binder": "C", "peptide": ("B",), "mhc": ("A",), "combined": ("A", "B")},
+}
+
 
 def load_pae(scores_json: Path) -> list[list[float]]:
     payload = json.loads(scores_json.read_text())
@@ -94,9 +105,14 @@ def chain_slices(lengths: dict[str, int]) -> dict[str, slice]:
     return slices
 
 
-def compute_ipae(pae: list[list[float]], slices: dict[str, slice]) -> float:
-    d_range = range(slices["D"].start, slices["D"].stop)
-    mhc_ranges: list[range] = [range(slices[c].start, slices[c].stop) for c in ("A", "B", "C")]
+def compute_ipae(
+    pae: list[list[float]],
+    slices: dict[str, slice],
+    binder: str = "D",
+    mhc_chains: Sequence[str] = ("A", "B", "C"),
+) -> float:
+    d_range = range(slices[binder].start, slices[binder].stop)
+    mhc_ranges: list[range] = [range(slices[c].start, slices[c].stop) for c in mhc_chains]
     total = 0.0
     count = 0
     for d in d_range:
@@ -109,11 +125,11 @@ def compute_ipae(pae: list[list[float]], slices: dict[str, slice]) -> float:
     return total / count
 
 
-def compute_iplddt(plddt: list[float], slices: dict[str, slice]) -> float:
-    binder = plddt[slices["D"]]
-    if not binder:
-        raise ValueError("compute_iplddt: chain D is empty (check chain ordering)")
-    return sum(binder) / len(binder)
+def compute_iplddt(plddt: list[float], slices: dict[str, slice], binder: str = "D") -> float:
+    binder_plddt = plddt[slices[binder]]
+    if not binder_plddt:
+        raise ValueError(f"compute_iplddt: binder chain {binder} is empty (check chain ordering)")
+    return sum(binder_plddt) / len(binder_plddt)
 
 
 class _DropChain(Select):
@@ -144,15 +160,15 @@ def _sasa(pdb_path: Path) -> float:
     return float(result.totalArea())
 
 
-def compute_bsa(complex_pdb: Path) -> float:
+def compute_bsa(complex_pdb: Path, binder_chain: str = "D") -> float:
     parser = PDBParser(QUIET=True)
     structure: Structure = parser.get_structure(complex_pdb.stem, str(complex_pdb))
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         pmhc_pdb = tmp_dir / "pmhc.pdb"
         binder_pdb = tmp_dir / "binder.pdb"
-        _write_subset(structure, _DropChain("D"), pmhc_pdb)
-        _write_subset(structure, _KeepChain("D"), binder_pdb)
+        _write_subset(structure, _DropChain(binder_chain), pmhc_pdb)
+        _write_subset(structure, _KeepChain(binder_chain), binder_pdb)
         sasa_complex = _sasa(complex_pdb)
         sasa_pmhc = _sasa(pmhc_pdb)
         sasa_binder = _sasa(binder_pdb)
@@ -301,29 +317,41 @@ def compute_iplddt_interface(
     return float(np.mean(plddt_arr[touched]))
 
 
-def metrics_for_design(pred_dir: Path) -> dict[str, Any]:
+def metrics_for_design(pred_dir: Path, target_layout: str = "full") -> dict[str, Any]:
     """Canonical metrics for one Stage 2 designs AF2 prediction.
 
     Reads the rank_001 PDB (chain ids, heavy-atom geometry, CA B-factor
     pLDDT) and the scores JSON (PAE matrix); routes through the
     interface-mask iPAE/ipLDDT. BSA computation is shared with the
-    controls path.
+    controls path. ``target_layout`` selects the binder/peptide/MHC chain
+    assignment (see LAYOUT_CHAINS): "full" (4-chain A/B/C/D) or "truncated"
+    (3-chain A=HLA, B=peptide, C=binder, for sub-run A groove-only outputs).
     """
+    chains = LAYOUT_CHAINS[target_layout]
+    binder = chains["binder"]
     scores_json = find_artifact(pred_dir, DEFAULT_SCORES_GLOB)
     rank_pdb = find_artifact(pred_dir, DEFAULT_PDB_GLOB)
     pae = load_pae(scores_json)
     chain_ids = chain_ids_per_residue(rank_pdb)
     distances = compute_heavy_atom_distances(rank_pdb)
     plddt = load_plddt_from_pdb(rank_pdb)
-    ipae = compute_ipae_interface(pae, chain_ids, distances)
-    iplddt = compute_iplddt_interface(plddt, chain_ids, distances)
-    bsa = compute_bsa(rank_pdb)
-    # BAKER_LAB_2025's ppi_pae_int is our combined iPAE (D <-> A+B+C). Cycle
-    # 03 decomposes it into peptide- and MHC-facing sub-metrics so we can
+    ipae = compute_ipae_interface(
+        pae, chain_ids, distances, binder=binder, target=chains["combined"]
+    )
+    iplddt = compute_iplddt_interface(
+        plddt, chain_ids, distances, binder=binder, target=chains["combined"]
+    )
+    bsa = compute_bsa(rank_pdb, binder_chain=binder)
+    # BAKER_LAB_2025's ppi_pae_int is our combined iPAE (binder <-> target).
+    # Cycle 03 decomposes it into peptide- and MHC-facing sub-metrics so we can
     # tell binders that contact the peptide (the specificity-bearing surface)
     # apart from binders that only grip the conserved MHC framework.
-    ppi_pae_int_peptide = compute_ipae_interface(pae, chain_ids, distances, target=("C",))
-    ppi_pae_int_mhc = compute_ipae_interface(pae, chain_ids, distances, target=("A", "B"))
+    ppi_pae_int_peptide = compute_ipae_interface(
+        pae, chain_ids, distances, binder=binder, target=chains["peptide"]
+    )
+    ppi_pae_int_mhc = compute_ipae_interface(
+        pae, chain_ids, distances, binder=binder, target=chains["mhc"]
+    )
     return {
         "ipae": ipae,
         "iplddt": iplddt,
@@ -336,19 +364,24 @@ def metrics_for_design(pred_dir: Path) -> dict[str, Any]:
     }
 
 
-def metrics_for_control(colabfold_dir: Path, backbone_pdb: Path | None) -> dict[str, Any]:
+def metrics_for_control(
+    colabfold_dir: Path, backbone_pdb: Path | None, target_layout: str = "full"
+) -> dict[str, Any]:
+    chains = LAYOUT_CHAINS[target_layout]
+    binder = chains["binder"]
     scores_json = find_artifact(colabfold_dir, DEFAULT_SCORES_GLOB)
     rank_pdb = find_artifact(colabfold_dir, DEFAULT_PDB_GLOB)
     # Chain lengths come from the predicted complex PDB itself — the cleaned
-    # crystal structure (when provided) lacks chain D, so we always slice from
-    # the ColabFold rank_001 PDB, which has the full A+B+C+D layout.
+    # crystal structure (when provided) lacks the binder chain, so we always
+    # slice from the ColabFold rank_001 PDB. "full" has A+B+C+D; "truncated"
+    # has A=HLA, B=peptide, C=binder.
     lengths = chain_lengths(rank_pdb)
     slices = chain_slices(lengths)
     pae = load_pae(scores_json)
     plddt = load_plddt(scores_json)
-    ipae = compute_ipae(pae, slices)
-    iplddt = compute_iplddt(plddt, slices)
-    bsa = compute_bsa(rank_pdb)
+    ipae = compute_ipae(pae, slices, binder=binder, mhc_chains=chains["combined"])
+    iplddt = compute_iplddt(plddt, slices, binder=binder)
+    bsa = compute_bsa(rank_pdb, binder_chain=binder)
     return {
         "ipae": ipae,
         "iplddt": iplddt,

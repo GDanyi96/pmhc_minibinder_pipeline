@@ -4,10 +4,17 @@
 # Aligns each BAKER scaffold onto our reference (align_scaffolds.py) then
 # partial-diffuses one binder backbone per scaffold (partial_diffuse.py).
 # Active only when stage1_mode=partial (cycle >= 3); see Snakefile ruleorder.
+#
+# Sub-run A aligns BAKER's fused-chain library against the BAKER-format
+# truncated target (chain B = HLA[1:180], C = peptide), passed as the align
+# reference so the binder lands on the groove rather than on beta2m. The
+# geometry/motif reference stays the full target manifest. See
+# specs/stage0_target_specification.md and Trap #31.
 
 rule stage1_subrun_a:
     input:
         target_yaml=str(RESULTS / "stage0" / "target.yaml"),
+        truncated="data/targets/3hpj_baker_truncated.pdb",
         cfg="configs/rfdiffusion_subrun_a.yaml",
         seeds="configs/seeds.yaml",
     output:
@@ -30,6 +37,7 @@ rule stage1_subrun_a:
                 --config {input.cfg} \
                 --seeds-yaml {input.seeds} \
                 --target-manifest {input.target_yaml} \
+                --reference-pdb {input.truncated} \
                 --out-dir {params.out_dir}
         fi
         """

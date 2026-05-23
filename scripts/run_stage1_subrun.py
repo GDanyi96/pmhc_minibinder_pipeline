@@ -77,8 +77,12 @@ def _resolve_inputs(
     repeated seed complex for B)."""
     if subrun == "a":
         scaffold_glob = MOCK_SCAFFOLD_GLOB if mock else (cfg.get("scaffolds") or {})["aligned_glob"]
+        # Real sub-run A uses BAKER's fused-chain library, aligned against the
+        # truncated reference (chain B = HLA, C = peptide) and rewritten to our
+        # A=binder / B=HLA / C=peptide layout. Mock keeps the lightweight
+        # toy-scaffold aligner + mock_clean.pdb so the cycle-99 DAG stays green.
         aligned = align_scaffolds.align_scaffolds(
-            str(scaffold_glob), reference_pdb, out_dir / "aligned"
+            str(scaffold_glob), reference_pdb, out_dir / "aligned", baker_layout=not mock
         )
         n = len(aligned) if mock else min(int(cfg["inference"]["num_designs"]), len(aligned))
         return aligned[:n]

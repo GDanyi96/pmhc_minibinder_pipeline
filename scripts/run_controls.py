@@ -71,6 +71,7 @@ DEFAULT_MANIFEST = Path("data/controls/controls_manifest.yaml")
 DEFAULT_THRESHOLDS = Path("configs/thresholds.yaml")
 DEFAULT_CYCLE = "01"
 DEFAULT_WT1_PDB = Path("data/targets/3hpj_clean.pdb")
+DEFAULT_TRUNCATED_PDB = Path("data/targets/3hpj_baker_truncated.pdb")
 
 
 class ControlEntry(BaseModel):
@@ -148,8 +149,28 @@ def build_fasta_entry(
     control: ControlEntry,
     wt1_pdb: Path,
     mock: bool = False,
+    target_layout: str = "full",
 ) -> tuple[str, str]:
+    """Build the ColabFold FASTA body for one control.
+
+    "full" folds the binder against the canonical 4-chain pMHC
+    (HC : beta2m : peptide : binder). "truncated" folds against the BAKER
+    groove-only fragment (HLA[1:180] : peptide : binder, beta2m dropped),
+    matching the sub-run A starting geometry; this yields a 3-chain AF2
+    output A=HLA, B=peptide, C=binder (see compute_metrics.LAYOUT_CHAINS).
+    """
     backbone = control.backbone_pdb
+    peptide = control.target_peptide
+    binder = control.binder_sequence
+    if not binder:
+        raise ValueError(f"control {control.id}: binder_sequence missing")
+
+    if target_layout == "truncated":
+        # HLA groove (chain B of the truncated target) + peptide + binder.
+        hla = "G" * 180 if mock else chain_sequence(wt1_pdb, "B")
+        body = f"{hla}:{peptide}:{binder}"
+        return control.id, body
+
     if mock:
         # Mock mode: real HC/beta2m chain extraction is unnecessary — the mock
         # ColabFold wrapper consumes only the FASTA header. Emit length-correct
@@ -161,10 +182,6 @@ def build_fasta_entry(
         source_pdb = wt1_pdb if backbone is None else Path(backbone)
         hc = chain_sequence(source_pdb, "A")
         b2m = chain_sequence(source_pdb, "B")
-    peptide = control.target_peptide
-    binder = control.binder_sequence
-    if not binder:
-        raise ValueError(f"control {control.id}: binder_sequence missing")
     body = f"{hc}:{b2m}:{peptide}:{binder}"
     return control.id, body
 
@@ -174,10 +191,11 @@ def write_fastas(
     out_dir: Path,
     wt1_pdb: Path,
     mock: bool = False,
+    target_layout: str = "full",
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     for control in controls:
-        ident, body = build_fasta_entry(control, wt1_pdb, mock=mock)
+        ident, body = build_fasta_entry(control, wt1_pdb, mock=mock, target_layout=target_layout)
         fasta = out_dir / f"{ident}.fasta"
         fasta.write_text(f">{ident}\n{body}\n")
 
@@ -260,6 +278,7 @@ def run(
     wt1_pdb: Path,
     skip_colabfold: bool = False,
     metrics_only: bool = False,
+    target: str = "full",
 ) -> int:
     controls = load_manifest(manifest_path)
     thresholds = load_thresholds(thresholds_path)
@@ -273,11 +292,20 @@ def run(
         controls = load_manifest(manifest_path)
         by_id = {c.id: c for c in controls}
 
-    results_dir = Path(f"results/cycle_{cycle}/stage2")
+    # The truncated baseline folds binders against the BAKER groove-only target
+    # (HLA[1:180] + peptide, no beta2m / alpha3) used by cycle-03 sub-run A, so
+    # it lands in its own results dir + metrics file and never shadows the
+    # canonical full-target controls run.
+    if target == "truncated":
+        results_dir = Path(f"results/cycle_{cycle}/controls_truncated_baseline")
+        metrics_name = "metrics_truncated_baseline.json"
+    else:
+        results_dir = Path(f"results/cycle_{cycle}/stage2")
+        metrics_name = "metrics.json"
     fasta_dir = results_dir / "colabfold" / "_controls_fasta"
     colabfold_out = results_dir / "colabfold" / "controls"
     if not metrics_only:
-        write_fastas(controls, fasta_dir, wt1_pdb, mock=mock)
+        write_fastas(controls, fasta_dir, wt1_pdb, mock=mock, target_layout=target)
 
     if not (skip_colabfold or metrics_only):
         cf_argv = ["--fasta-dir", str(fasta_dir), "--out-dir", str(colabfold_out)]
@@ -294,7 +322,7 @@ def run(
     per_control: dict[str, dict[str, Any]] = {}
     for control in controls:
         directory = colabfold_out / control.id
-        row = compute_metrics.metrics_for_control(directory, None)
+        row = compute_metrics.metrics_for_control(directory, None, target_layout=target)
         per_control[control.id] = row
 
     status, halt_message = enforce_halt_gate(per_control, thresholds)
@@ -306,13 +334,14 @@ def run(
     metrics_doc = {
         "cycle": cycle,
         "stage": "2",
+        "target": target,
         "timestamp": dt.datetime.now(dt.UTC).isoformat(),
         "controls": per_control,
         "halt_gate": {"passed": status == "pass", "message": halt_message},
         "designs": [],
     }
 
-    metrics_path = results_dir / "metrics.json"
+    metrics_path = results_dir / metrics_name
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     metrics_path.write_text(json.dumps(metrics_doc, indent=2) + "\n")
     logger.info("Wrote %s", metrics_path)
@@ -331,7 +360,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--thresholds", type=Path, default=DEFAULT_THRESHOLDS)
     parser.add_argument("--cycle", default=DEFAULT_CYCLE)
-    parser.add_argument("--wt1-pdb", type=Path, default=DEFAULT_WT1_PDB)
+    parser.add_argument("--wt1-pdb", type=Path, default=None)
+    parser.add_argument(
+        "--target",
+        choices=["full", "truncated"],
+        default="full",
+        help="full = canonical 4-chain pMHC; truncated = BAKER groove-only "
+        "(HLA[1:180]+peptide) used by cycle-03 sub-run A. Default full.",
+    )
     parser.add_argument("--mock", action="store_true")
     parser.add_argument(
         "--skip-colabfold",
@@ -344,14 +380,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip negatives gen + FASTA writing + ColabFold; recompute metrics+halt only.",
     )
     args = parser.parse_args(argv)
+    wt1_pdb = args.wt1_pdb or (
+        DEFAULT_TRUNCATED_PDB if args.target == "truncated" else DEFAULT_WT1_PDB
+    )
     return run(
         args.config,
         args.thresholds,
         args.cycle,
         args.mock,
-        args.wt1_pdb,
+        wt1_pdb,
         skip_colabfold=args.skip_colabfold,
         metrics_only=args.metrics_only,
+        target=args.target,
     )
 
 

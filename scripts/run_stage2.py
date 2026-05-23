@@ -345,6 +345,7 @@ def _compute_metrics_for_predictions(
     top_records: list[dict[str, Any]],
     predictions_root: Path,
     mock: bool,
+    target_layout: str = "full",
 ) -> list[dict[str, Any]]:
     """Compute iPAE / ipLDDT / BSA for each fan-in prediction.
 
@@ -353,6 +354,8 @@ def _compute_metrics_for_predictions(
     ``metrics_for_control`` (the existing position-slice path) so the
     boundary fixture in ``tests/fixtures/stage2/designs/`` continues to
     yield 4/40 -- see specs/stage2_proteinmpnn_af2.md "Mock mode".
+    ``target_layout`` ("full" | "truncated") selects the binder/peptide/MHC
+    chain assignment for sub-run A groove-only AF2 outputs (LAYOUT_CHAINS).
     """
     pred_id_fmt = "{design_id}_seq{seq_id}" if mock else "{design_id}_seq{seq_id:02d}"
     metric_records: list[dict[str, Any]] = []
@@ -360,9 +363,9 @@ def _compute_metrics_for_predictions(
         pred_id = pred_id_fmt.format(design_id=rec["design_id"], seq_id=int(rec["seq_id"]))
         pred_dir = predictions_root / pred_id
         if mock:
-            m = compute_metrics.metrics_for_control(pred_dir, None)
+            m = compute_metrics.metrics_for_control(pred_dir, None, target_layout=target_layout)
         else:
-            m = compute_metrics.metrics_for_design(pred_dir)
+            m = compute_metrics.metrics_for_design(pred_dir, target_layout=target_layout)
         record = {
             "design_id": rec["design_id"],
             "seq_id": rec["seq_id"],

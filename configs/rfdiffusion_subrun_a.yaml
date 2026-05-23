@@ -32,6 +32,15 @@ partial_T: 15
 # occupies the first 150 slots; sub-run B starts at 150 (see subrun_b yaml).
 seed_offset: 0
 
+# Alignment reference is the BAKER-format truncated target (chain B = HLA
+# alpha1+alpha2 residues 1-180, chain C = peptide RMFPNAPYL residues 1-9; no
+# beta2m, no alpha3). BAKER scaffolds carry the target as a fused chain B
+# (HLA[1:180]+peptide), so they must be aligned against this groove-only
+# fragment, not the full 3hpj_clean.pdb whose chain B is beta2m -- aligning
+# HLA onto beta2m silently produces garbage geometry (Trap #31). Produced by
+# workflow/scripts/prep_baker_target.py; see specs/stage0_target_specification.md.
+# Peptide-facing groove hotspots for this target: C1,C4,C6,C8 (peptide) and
+# B65,B66,B150,B155 (HLA alpha-helix walls, renamed A->B by the truncation).
 scaffolds:
   aligned_glob: data/scaffolds/baker_library/scaf*.pdb
-  reference_pdb: data/targets/3hpj_clean.pdb
+  reference_pdb: data/targets/3hpj_baker_truncated.pdb
