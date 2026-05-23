@@ -91,6 +91,22 @@ def _resolve_inputs(
     return [seed_pdb] * n
 
 
+def _fixed_chains_for_subrun(subrun: str, target: Any, mock: bool) -> frozenset[str]:
+    """Motif (non-binder) chains used to identify the binder by exclusion in
+    the geometry gate (_binder_ca_coords).
+
+    Real sub-run A designs are 3-chain BAKER-truncated complexes (A=binder,
+    B=HLA[1:180], C=peptide), so the binder shares chain letter A with the
+    full manifest's HC; excluding the full {A,B,C} set would leave no
+    candidate and crash scoring. The truncated motif is {B,C}, leaving chain
+    A as the unique binder. Sub-run B and every mock path keep the full
+    manifest's non-binder chains (binder synthesized on chain D).
+    """
+    if subrun == "a" and not mock:
+        return frozenset({"B", "C"})
+    return frozenset(cid for cid, chain in target.chains.items() if chain.role != "binder")
+
+
 def run(
     subrun: str,
     config_yaml: Path,
@@ -114,7 +130,7 @@ def run(
     cleaned_pdb = Path(target.cleaned_pdb)
     hotspot_tokens = _hotspot_tokens(target)
     hotspot_xyz = _hotspot_ca_xyz(target, cleaned_pdb)
-    fixed_chains = frozenset(cid for cid, chain in target.chains.items() if chain.role != "binder")
+    fixed_chains = _fixed_chains_for_subrun(subrun, target, mock)
     length_range = (target.binder.length_min, target.binder.length_max)
 
     designs_dir = out_dir / "designs"

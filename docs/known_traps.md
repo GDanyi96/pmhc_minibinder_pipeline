@@ -533,3 +533,68 @@ even though the CA-count match and RMSD look fine.
   adapter that prevents the silent mismatch from re-entering the metrics.
 
 **First observed**: cycle 03 sub-run A prep, before any A100 time was spent.
+
+---
+
+## Trap #32: partial diffusion still requires contigmap.contigs (it is the residue mask, not an optional bias)
+
+**Cycle**: 03 (Stage 1 sub-run A, first real launch).
+
+**Symptom**: sub-run A dies on the **first** `run_inference.py` invocation with
+`Must either specify a contig string or precise mapping.` No design is produced;
+the run never reaches the GPU diffusion loop.
+
+**Root cause**: `partial_diffuse.partial_diffuse_one` built the RFdiffusion
+command without `contigmap.contigs`, on the false belief that the contig is only
+needed for de-novo generation (or that it is an optional hotspot bias). It is
+neither: RFdiffusion uses `contigmap.contigs` as the **residue mask in every
+mode**, partial diffusion included. Per `/workspace/RFdiffusion/README.md`
+("Partial diffusion"):
+
+> Anything prefixed by a letter indicates that this is a motif, with the letter
+> corresponding to the chain letter in the input pdb files. Anything not
+> prefixed by a letter indicates protein to be built.
+
+> if you have a binder:target complex, and you want to diversify the binder
+> (length 100, chain A), you would need to input something like this:
+> `contigmap.contigs=[100-100/0 B1-150]` `diffuser.partial_T=20`
+
+Do **not** conflate this with `ppi.hotspot_res`, which *is* optional in partial
+mode.
+
+**Fix**:
+- `partial_diffuse._derive_contigs_subrun_a(aligned_scaffold_pdb)` reads the
+  aligned scaffold's chain-A binder length `N` (layout A=binder, B=HLA[1:180],
+  C=peptide[1:9]) and returns `[N-N/0 B1-180/0 C1-9]`. The binder slot is a
+  **bare `N-N`** range (unprefixed = redesigned); `B`/`C` are **letter-prefixed
+  motifs** (preserved). An `A`-prefixed binder slot would tell RFdiffusion to
+  *preserve* chain A, defeating partial diffusion (the BAKER scaffolds would
+  come back essentially unchanged).
+- `partial_diffuse_one` appends `contigmap.contigs={contig}` to the command;
+  a pre-flight `ValueError` fires if chain A is empty/malformed, so a bad mask
+  is caught before the subprocess rather than swallowed by RFdiffusion's
+  generic error.
+- Knock-on (same root layout): the bare-`N-N` binder makes RFdiffusion write the
+  designed binder as chain **A** in a 3-chain output (A=binder, B=HLA,
+  C=peptide). Stage 1's geometry gate (`_binder_ca_coords`) identifies the
+  binder by exclusion from `fixed_chains`; the full manifest's `{A,B,C}` would
+  leave no candidate and crash scoring. `run_stage1_subrun._fixed_chains_for_subrun`
+  returns `{B,C}` for real sub-run A so chain A is the unique binder.
+
+**Recurrence guard**:
+- `tests/test_partial_diffuse.py`: `_derive_contigs_subrun_a` on an 80-mer
+  scaffold returns `[80-80/0 B1-180/0 C1-9]`; an empty chain A raises
+  `ValueError`; and `partial_diffuse_one`'s emitted command contains
+  `contigmap.contigs=[80-80/0 B1-180/0 C1-9]`.
+- `tests/test_stage1_subruns.py`: `_fixed_chains_for_subrun` returns `{B,C}`
+  for real sub-run A, and an end-to-end `run(subrun="a", mock=False)` on a
+  3-chain design scores `binder_length == 80` without crashing (call-site
+  guard — a helper test alone could pass the right `fixed_chains` while the real
+  path passes the wrong one; cf. Trap #28).
+
+**Note**: this PR covers Stage 1 only. Real sub-run A then produces 3-chain
+designs that Stage 2's `splice_binder` (4-chain binder-on-D expectation) cannot
+yet consume — the operator halts after `rule stage1_subrun_a`; the truncated
+Stage 2 path is a separate PR (Trap #33, TBD).
+
+**First observed**: cycle 03 sub-run A, first real pod launch.

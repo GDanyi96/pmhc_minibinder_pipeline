@@ -309,6 +309,16 @@ conditional `ruleorder` makes `stage1_merge` win over the legacy
    (`workflow/scripts/partial_diffuse.py`), `partial_T = 15`,
    `noise_scale_ca = 0`. ~150 backbones.
 
+`contigmap.contigs` is **derived per-design** from each aligned scaffold's
+geometry — not statically configured — because BAKER scaffolds vary in binder
+size (`partial_diffuse._derive_contigs_subrun_a`). The binder slot is a **bare
+`N-N`** range (chain-A CA count; unprefixed = redesigned) and the static motif
+portion is the letter-prefixed `B1-180/0 C1-9` (preserved). RFdiffusion requires
+this in partial-diffusion mode as the residue mask (Trap #32). The resulting
+designs are 3-chain **A=binder, B=HLA, C=peptide**; Stage 1 scores them with
+`fixed_chains={B,C}` (`run_stage1_subrun._fixed_chains_for_subrun`) so the binder
+on chain A is identified by exclusion.
+
 `partial_T = 15` (vs 10 for sub-run B): BAKER scaffolds are foreign backbones
 that need more remodeling to adapt to the WT1/A\*02:01 interface. This is a
 conservative blind default — there is no published optimum for pMHC scaffold

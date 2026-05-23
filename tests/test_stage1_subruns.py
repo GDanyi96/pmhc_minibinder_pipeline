@@ -5,7 +5,83 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts import merge_stage1_subruns, run_stage1_subrun
+from workflow.scripts.run_rfdiffusion import _load_target
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+MOCK_MANIFEST = REPO_ROOT / "tests/fixtures/stage1/mock_target.yaml"
+MOCK_REFERENCE = REPO_ROOT / "tests/fixtures/stage1/mock_clean.pdb"
+
+
+def _write_ca_pdb(path: Path, chain_lengths: dict[str, int]) -> None:
+    """Write a minimal CA-only PDB with the given per-chain residue counts."""
+    lines: list[str] = []
+    serial = 1
+    for chain_id, n in chain_lengths.items():
+        for resnum in range(1, n + 1):
+            x, y, z = float(serial), 0.0, 0.0
+            lines.append(
+                f"ATOM  {serial:>5d}  CA  ALA {chain_id}{resnum:>4d}    "
+                f"{x:>8.3f}{y:>8.3f}{z:>8.3f}  1.00  0.00           C"
+            )
+            serial += 1
+    lines.append("END")
+    path.write_text("\n".join(lines) + "\n")
+
+
+def test_fixed_chains_subrun_a_real_is_truncated_motif() -> None:
+    target = _load_target(MOCK_MANIFEST).primary
+    assert run_stage1_subrun._fixed_chains_for_subrun("a", target, mock=False) == frozenset(
+        {"B", "C"}
+    )
+    manifest_set = frozenset(c for c, ch in target.chains.items() if ch.role != "binder")
+    assert run_stage1_subrun._fixed_chains_for_subrun("b", target, mock=False) == manifest_set
+    assert run_stage1_subrun._fixed_chains_for_subrun("a", target, mock=True) == manifest_set
+
+
+def test_subrun_a_real_scores_three_chain_design(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end call-site guard (Trap #28 lesson): drive the real run() path
+    with GPU/IO boundaries stubbed and a 3-chain truncated design (A=binder,
+    B=HLA, C=peptide). The binder must be identified through the real
+    _fixed_chains_for_subrun -> _geometry_pass -> _binder_ca_coords chain, not
+    crash on the empty-candidate exclusion."""
+    aligned = tmp_path / "aligned" / "scaf0.pdb"
+    aligned.parent.mkdir(parents=True)
+    _write_ca_pdb(aligned, {"A": 80, "B": 180, "C": 9})
+
+    def fake_align(scaffold_glob, reference_pdb, out_dir, **kwargs):  # type: ignore[no-untyped-def]
+        return [aligned]
+
+    def fake_diffuse(input_pdb, out_prefix, **kwargs):  # type: ignore[no-untyped-def]
+        _write_ca_pdb(Path(out_prefix).with_suffix(".pdb"), {"A": 80, "B": 180, "C": 9})
+
+    monkeypatch.setattr(run_stage1_subrun.align_scaffolds, "align_scaffolds", fake_align)
+    monkeypatch.setattr(run_stage1_subrun.partial_diffuse, "partial_diffuse_one", fake_diffuse)
+    monkeypatch.setattr(run_stage1_subrun, "_file_sha256", lambda p: "deadbeef")
+    monkeypatch.setattr(run_stage1_subrun, "_git_sha", lambda p: "abc1234")
+
+    rc = run_stage1_subrun.run(
+        subrun="a",
+        config_yaml=REPO_ROOT / "configs/rfdiffusion_subrun_a.yaml",
+        seeds_yaml=REPO_ROOT / "configs/seeds.yaml",
+        target_manifest=MOCK_MANIFEST,
+        reference_pdb=MOCK_REFERENCE,
+        cycle=99,
+        out_dir=tmp_path / "subrun_a",
+        mock=False,
+    )
+    assert rc == 0
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "subrun_a" / "designs.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    assert len(records) == 1
+    assert records[0]["binder_length"] == 80
 
 
 def _run_subrun(subrun: str, out_dir: Path) -> dict:
