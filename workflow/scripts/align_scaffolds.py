@@ -29,6 +29,8 @@ from pathlib import Path
 from Bio.PDB import PDBIO, PDBParser, Superimposer
 from Bio.PDB.Structure import Structure
 
+from workflow.scripts import align_baker_scaffolds
+
 logger = logging.getLogger("align_scaffolds")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -82,11 +84,20 @@ def align_scaffolds(
     out_dir: Path,
     scaffold_target_chain: str = DEFAULT_SCAFFOLD_TARGET_CHAIN,
     reference_chain: str = DEFAULT_REFERENCE_CHAIN,
+    baker_layout: bool = False,
 ) -> list[Path]:
     """Align every scaffold matching ``scaffold_glob`` onto ``reference_pdb``.
 
     Returns the aligned scaffold paths (sorted, deterministic order).
+
+    ``baker_layout=True`` delegates to align_baker_scaffolds.py: BAKER's
+    published library carries the target as a fused chain B (HLA[1:180] +
+    peptide) with the binder on chain A, so it must be aligned against the
+    truncated reference (chain B = HLA, chain C = peptide) and rewritten into
+    our A=binder / B=HLA / C=peptide layout. Used by cycle-03 sub-run A.
     """
+    if baker_layout:
+        return align_baker_scaffolds.align_baker_scaffolds(scaffold_glob, reference_pdb, out_dir)
     base = Path(scaffold_glob)
     matches = sorted(base.parent.glob(base.name))
     if not matches:
