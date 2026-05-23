@@ -483,3 +483,53 @@ crude-sequence scaffolds for exactly this reason.
   Ala and toward BAKER's redesigned-binder composition.
 - Do not "fix" Ala-rich backbones upstream; the lever is the MPNN bias, not
   the diffusion step.
+
+## Trap #31: BAKER scaffold alignment requires chain B = HLA truncated; the full target with β2m causes silent geometric mismatch
+
+**Cycle**: 03 (Stage 1 sub-run A prep).
+
+**Symptom**: aligning BAKER's published `scaf*.pdb` library onto our
+canonical `data/targets/3hpj_clean.pdb` produces binders sitting in the wrong
+place — partial diffusion then starts from garbage geometry and burns ~6 h of
+A100 on designs that can never pass. No exception is raised; the alignment
+"succeeds" with a plausible-looking RMSD.
+
+**Root cause**: chain-layout mismatch. Each BAKER scaffold carries the target
+as a single **chain B = HLA-A\*02:01 α1+α2 (residues 1-180) fused to the 9-mer
+peptide** (189 continuous residues), binder on chain A. Our `3hpj_clean.pdb`
+follows the crystal convention: chain A = HC (~275), **chain B = β2m**, chain C
+= peptide. The old `align_scaffolds.py` superposed *scaffold chain B onto
+reference chain B* — i.e. HLA α1/α2 CA atoms onto β2m CA atoms. β2m and the
+HLA groove are unrelated folds, so the recovered rigid transform is meaningless
+even though the CA-count match and RMSD look fine.
+
+**Fix**:
+- `workflow/scripts/prep_baker_target.py` produces a BAKER-format truncated
+  target `data/targets/3hpj_baker_truncated.pdb`: keep HC residues 1-180
+  (α1+α2), rename A→B, drop β2m, keep peptide as chain C. Layout now matches
+  BAKER's groove-only fragment (chain B = HLA, chain C = peptide).
+- `workflow/scripts/align_baker_scaffolds.py` superposes the scaffold's chain-B
+  HLA substring (first 180 CA) onto the truncated reference's chain B, then
+  rewrites the complex into our standard `A=binder / B=HLA / C=peptide` layout.
+- `align_scaffolds.align_scaffolds(..., baker_layout=True)` dispatches to it;
+  sub-run A (`rule stage1_subrun_a`) passes the truncated target as the align
+  `--reference-pdb` while the geometry/motif reference stays the full target.
+- Sub-run B (full target, `design_2079`) is unaffected: it was AF2-validated
+  against the full 4-chain target and keeps `3hpj_clean.pdb`.
+- Truncation also shifts the AF2 chain layout for sub-run A and its
+  recalibrated controls to 3-chain `A=HLA, B=peptide, C=binder`;
+  `compute_metrics` selects the binder/peptide/MHC chains via
+  `LAYOUT_CHAINS[target_layout]` so decomposed iPAE stays correct.
+
+**Recurrence guard**:
+- `tests/test_prep_baker_target.py` asserts the truncated target has exactly
+  CA counts `{B: 180, C: 9}`, no chain A, no β2m, numbering preserved.
+- `tests/test_align_baker_scaffolds.py` asserts the aligned output is
+  `A=binder / B=HLA[180] / C=peptide[9]` and that the HLA-substring
+  superposition recovers a known +100 Å translation (RMSD ≈ 0).
+- `tests/test_controls_truncated.py` asserts the full-layout default
+  (`binder="D"`) finds **no** interface on a 3-chain truncated prediction,
+  while the truncated layout decomposes iPAE correctly — locking in the
+  adapter that prevents the silent mismatch from re-entering the metrics.
+
+**First observed**: cycle 03 sub-run A prep, before any A100 time was spent.

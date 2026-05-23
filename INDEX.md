@@ -58,8 +58,10 @@ One-line description per tracked file. New file? Add a line here.
 
 - `workflow/scripts/__init__.py` — Marks workflow.scripts as a package (mypy + imports).
 - `workflow/scripts/prep_target.py` — Stage 0 entry point.
+- `workflow/scripts/prep_baker_target.py` — Cycle 03 sub-run A: truncate 3hpj_clean.pdb to the BAKER-format groove-only target (chain B=HLA[1:180], C=peptide; no β2m/α3).
 - `workflow/scripts/run_rfdiffusion.py` — Stage 1 entry point.
-- `workflow/scripts/align_scaffolds.py` — Cycle 03: BioPython superposition of BAKER scaffolds onto the reference (align_chainB.py equivalent).
+- `workflow/scripts/align_scaffolds.py` — Cycle 03: BioPython superposition of BAKER scaffolds onto the reference (align_chainB.py equivalent); `baker_layout=True` dispatches to align_baker_scaffolds.
+- `workflow/scripts/align_baker_scaffolds.py` — Cycle 03 sub-run A: align BAKER fused-chain scaffolds onto the truncated target, emit A=binder/B=HLA/C=peptide.
 - `workflow/scripts/partial_diffuse.py` — Cycle 03: RFdiffusion partial-diffusion wrapper (mock synthesizes geometry-passing 4-chain designs).
 - `workflow/scripts/contact_filter.py` — Cycle 03: BioPython binder↔peptide C-beta contact gate.
 - `workflow/scripts/setup_cycle03_inputs.py` — Pod-only one-shot: symlink BAKER scaffolds + stitch the design_2079 seed complex.
@@ -122,6 +124,9 @@ One-line description per tracked file. New file? Add a line here.
 - `tests/test_aggregate_mpnn_outputs.py` — MPNN FASTA parsing + MPNN/AF2 seed range + uniqueness tests.
 - `tests/test_stage2_designs_halt_gate.py` — Stage 2 designs orchestrator + halt-gate tests (pass-at-boundary + fail paths).
 - `tests/test_align_scaffolds.py` — Cycle 03 align_scaffolds superposition tests.
+- `tests/test_prep_baker_target.py` — Cycle 03 sub-run A: truncation CA-count / layout / numbering tests.
+- `tests/test_align_baker_scaffolds.py` — Cycle 03 sub-run A: BAKER fused-chain alignment + dispatch tests.
+- `tests/test_controls_truncated.py` — Cycle 03: truncated controls FASTA + target-layout iPAE decomposition tests.
 - `tests/test_partial_diffuse.py` — Cycle 03 partial_diffuse mock synthesis + geometry-pass tests.
 - `tests/test_contact_filter.py` — Cycle 03 contact_filter peptide-contact gate tests.
 - `tests/test_af2_metrics_decomposition.py` — Cycle 03 decomposed iPAE (peptide/MHC) sub-metric tests.
@@ -132,6 +137,9 @@ One-line description per tracked file. New file? Add a line here.
 - `tests/fixtures/rfdiffusion/sample.pdb` — Stage 1 cycle-1 stub backbone (legacy).
 - `tests/fixtures/baker_library_mock/_make_fixtures.py` — Generator for the 3 mock BAKER scaffolds + the stitched design_2079 seed.
 - `tests/fixtures/baker_library_mock/scaf{0,1,2}.pdb` — 3 synthetic mini BAKER scaffolds (binder chain A + truncated target chain B).
+- `tests/fixtures/baker_truncated_mock/_make_fixtures.py` — Generator for the BAKER-truncated mock target + fused-chain mock scaffolds.
+- `tests/fixtures/baker_truncated_mock/scaf{0,1}.pdb` — Mock BAKER scaffolds (binder chain A + fused chain B = HLA[180]+peptide[9]).
+- `tests/fixtures/targets/3hpj_baker_truncated_mock.pdb` — Mock BAKER-format truncated target (chain B=HLA[180], C=peptide[9]).
 - `tests/fixtures/design_2079_mock_seed.pdb` — Synthetic 4-chain design_2079 seed complex (A/B/C motif + chain D binder).
 - `tests/fixtures/stage1/_make_fixtures.py` — Deterministic generator for the Stage 1 mock fixtures.
 - `tests/fixtures/stage1/mock_clean.pdb` — Synthetic cleaned PDB with all 8 hotspot Ca residues.
