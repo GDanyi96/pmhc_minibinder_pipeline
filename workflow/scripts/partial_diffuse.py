@@ -157,15 +157,29 @@ def partial_diffuse_one(
     noise_scale_ca: int,
     hydra_dir: Path,
 ) -> None:
-    """Run one RFdiffusion partial-diffusion design (real mode)."""
+    """Run one RFdiffusion partial-diffusion design (real mode).
+
+    Trap #33: RFdiffusion *always* appends ``_{design_startnum}`` to whatever
+    ``inference.output_prefix`` it is given. Passing the seed-embedded
+    ``out_prefix`` (``design_{seed}``) together with ``design_startnum={seed}``
+    therefore produced ``design_{seed}_{seed}.pdb`` (double suffix), invisible
+    to enumeration that globs ``design_{seed}.pdb``.
+
+    Fix: only ``out_prefix.parent`` is honored — the actual prefix base is
+    pinned to ``"design"`` and the seed comes solely from ``design_startnum``,
+    so RFdiffusion writes ``<out_prefix.parent>/design_{seed}.pdb``. The stem of
+    the caller's ``out_prefix`` is intentionally ignored to keep the writer's
+    output filename in lockstep with the single-suffix reader contract.
+    """
     rfdiffusion_python = _resolve_rfdiffusion_python()
     hydra_dir.mkdir(parents=True, exist_ok=True)
     contig = _derive_contigs_subrun_a(input_pdb)
+    actual_prefix = out_prefix.parent / "design"
     cmd = [
         rfdiffusion_python,
         str(RFDIFFUSION_DIR / "scripts" / "run_inference.py"),
         f"inference.input_pdb={input_pdb}",
-        f"inference.output_prefix={out_prefix}",
+        f"inference.output_prefix={actual_prefix}",
         "inference.num_designs=1",
         f"inference.ckpt_override_path={ckpt}",
         f"diffuser.partial_T={partial_T}",

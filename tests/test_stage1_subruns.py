@@ -84,6 +84,56 @@ def test_subrun_a_real_scores_three_chain_design(
     assert records[0]["binder_length"] == 80
 
 
+def test_subrun_a_writer_reader_filename_roundtrip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trap #33 contract test: drive the REAL partial_diffuse_one (prefix
+    construction) and emulate RFdiffusion's filename rule (it appends
+    ``_{design_startnum}`` to ``inference.output_prefix``), then let run()'s
+    real enumeration glob find the design. Reintroducing the seed into the
+    prefix would yield ``design_{seed}_{seed}.pdb`` -> n_completed: 0, the exact
+    symptom that was invisible until the symlink recovery."""
+    aligned = tmp_path / "aligned" / "scaf0.pdb"
+    aligned.parent.mkdir(parents=True)
+    _write_ca_pdb(aligned, {"A": 71, "B": 180, "C": 9})
+
+    def fake_align(scaffold_glob, reference_pdb, out_dir, **kwargs):  # type: ignore[no-untyped-def]
+        return [aligned]
+
+    def fake_rfdiffusion_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
+        prefix = next(
+            a.split("=", 1)[1] for a in cmd if a.startswith("inference.output_prefix=")
+        )
+        startnum = next(
+            a.split("=", 1)[1] for a in cmd if a.startswith("inference.design_startnum=")
+        )
+        # RFdiffusion appends _{startnum} to the prefix.
+        _write_ca_pdb(Path(f"{prefix}_{startnum}.pdb"), {"A": 71, "B": 180, "C": 9})
+
+    monkeypatch.setattr(run_stage1_subrun.align_scaffolds, "align_scaffolds", fake_align)
+    monkeypatch.setattr(run_stage1_subrun.partial_diffuse, "_resolve_rfdiffusion_python", lambda: "python")
+    monkeypatch.setattr(run_stage1_subrun.partial_diffuse.subprocess, "run", fake_rfdiffusion_run)
+    monkeypatch.setattr(run_stage1_subrun, "_file_sha256", lambda p: "deadbeef")
+    monkeypatch.setattr(run_stage1_subrun, "_git_sha", lambda p: "abc1234")
+
+    rc = run_stage1_subrun.run(
+        subrun="a",
+        config_yaml=REPO_ROOT / "configs/rfdiffusion_subrun_a.yaml",
+        seeds_yaml=REPO_ROOT / "configs/seeds.yaml",
+        target_manifest=MOCK_MANIFEST,
+        reference_pdb=MOCK_REFERENCE,
+        cycle=99,
+        out_dir=tmp_path / "subrun_a",
+        mock=False,
+    )
+    assert rc == 0
+    summary = json.loads((tmp_path / "subrun_a" / "subrun_summary.json").read_text())
+    assert summary["n_completed"] == 1
+    # The single design lands as a single-suffix file the enumerator found.
+    designs = list((tmp_path / "subrun_a" / "designs").glob("design_*.pdb"))
+    assert [p.name for p in designs] == ["design_99000.pdb"]
+
+
 def _run_subrun(subrun: str, out_dir: Path) -> dict:
     rc = run_stage1_subrun.main(
         ["--mock", "--subrun", subrun, "--cycle", "99", "--out-dir", str(out_dir)]

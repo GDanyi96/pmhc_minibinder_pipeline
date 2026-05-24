@@ -111,3 +111,40 @@ def test_partial_diffuse_one_passes_contigs(
         hydra_dir=tmp_path / "hydra",
     )
     assert "contigmap.contigs=[80-80/0 B1-180/0 C1-9]" in captured["cmd"]
+
+
+def test_partial_diffuse_one_prefix_has_no_seed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trap #33 writer guard: RFdiffusion appends ``_{design_startnum}`` to the
+    prefix, so the prefix must NOT also carry the seed. Assert the prefix base
+    is ``design`` (no seed), the startnum is the seed, and the implied output
+    file is the single-suffix ``design_{seed}.pdb`` the enumerator globs for."""
+    scaffold = tmp_path / "scaf0.pdb"
+    _write_ca_pdb(scaffold, {"A": 71, "B": 180, "C": 9})
+    captured: dict[str, list[str]] = {}
+
+    monkeypatch.setattr(partial_diffuse, "_resolve_rfdiffusion_python", lambda: "python")
+    monkeypatch.setattr(
+        partial_diffuse.subprocess,
+        "run",
+        lambda cmd, **kwargs: captured.update(cmd=cmd),  # type: ignore[arg-type]
+    )
+
+    out_dir = tmp_path / "designs"
+    out_dir.mkdir()
+    partial_diffuse.partial_diffuse_one(
+        input_pdb=scaffold,
+        out_prefix=out_dir / "design_3000",
+        seed=3000,
+        ckpt=tmp_path / "ckpt.pt",
+        partial_T=15,
+        noise_scale_ca=0,
+        hydra_dir=tmp_path / "hydra",
+    )
+    assert f"inference.output_prefix={out_dir / 'design'}" in captured["cmd"]
+    assert "inference.design_startnum=3000" in captured["cmd"]
+    # RFdiffusion appends _{startnum} to the prefix -> design_3000.pdb (single).
+    assert "inference.output_prefix=" + str(out_dir / "design_3000") not in captured["cmd"]
+    implied_output = out_dir / "design_3000.pdb"
+    assert implied_output.name == "design_3000.pdb"
