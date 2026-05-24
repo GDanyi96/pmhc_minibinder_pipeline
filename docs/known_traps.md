@@ -592,9 +592,194 @@ mode.
   guard — a helper test alone could pass the right `fixed_chains` while the real
   path passes the wrong one; cf. Trap #28).
 
-**Note**: this PR covers Stage 1 only. Real sub-run A then produces 3-chain
-designs that Stage 2's `splice_binder` (4-chain binder-on-D expectation) cannot
-yet consume — the operator halts after `rule stage1_subrun_a`; the truncated
-Stage 2 path is a separate PR (Trap #33, TBD).
+**Note**: the original Stage 1 PR covered Stage 1 only — real sub-run A then
+produced 3-chain designs that Stage 2's `splice_binder` (4-chain binder-on-D
+expectation) could not consume. The truncated Stage 2 path landed in a follow-up
+(Trap #33, now RESOLVED below).
 
 **First observed**: cycle 03 sub-run A, first real pod launch.
+
+## Trap #33: partial-diffusion filename writer/reader mismatch (RESOLVED)
+
+**Cycle**: 03 (Stage 1 sub-run A, first 150-design production run).
+
+**Status**: **RESOLVED** — fixed in the cycle-03 Stage 2 truncated PR (commit
+"fix: derive correct partial_diffuse output_prefix without seed"). The earlier
+recovery hack (per-design symlinks `design_NNNN.pdb -> design_NNNN_NNNN.pdb`) is
+no longer needed for new runs.
+
+**Symptom**: 150 designs ran to completion (98.5 min A100 wall, no exception),
+but `subrun_summary.json` reported `n_completed: 0` and no design was enumerated
+for Stage 2. Healthy wall time with a zero count is the tell — designs *were*
+produced; enumeration could not find them.
+
+**Root cause**: writer/reader filename drift (Trap #28's twin). RFdiffusion
+*always* appends `_{design_startnum}` to whatever `inference.output_prefix` it
+is given. `partial_diffuse_one` passed `inference.output_prefix=design_{seed}`
+**and** `inference.design_startnum={seed}`, so RFdiffusion wrote
+`design_{seed}_{seed}.pdb` (double suffix). The enumerator in
+`run_stage1_subrun.py` (and `run_stage2.py`) globs the single-suffix
+`design_{seed}.pdb` → zero matches, silently.
+
+**Fix**: in `partial_diffuse.partial_diffuse_one`, pin the prefix base to
+`"design"` using only `out_prefix.parent` (the caller's stem is intentionally
+ignored) and let `design_startnum` supply the suffix → RFdiffusion writes
+`<out_dir>/design_{seed}.pdb`, matching the reader.
+
+**Recurrence guard**:
+- `tests/test_partial_diffuse.py::test_partial_diffuse_one_prefix_has_no_seed`
+  asserts the emitted command carries `inference.output_prefix=<dir>/design`
+  (no seed) and `inference.design_startnum={seed}`.
+- `tests/test_stage1_subruns.py::test_subrun_a_writer_reader_filename_roundtrip`
+  drives the real `partial_diffuse_one` + real enumeration with a stub that
+  emulates RFdiffusion's `_{startnum}` rule, asserting `n_completed == 1` and a
+  single-suffix `design_99000.pdb`. Reintroducing the seed into the prefix makes
+  this round-trip fail — the contract test that was missing when Trap #33 fired.
+
+**First observed**: cycle 03 sub-run A, first 150-design production run.
+
+## Trap #34: `snakemake --config mock=false` stores the string "false"; `bool("false")` is True
+
+**Cycle**: 03 (Stage 1 sub-run A launch).
+
+**Symptom**: a run invoked with `--config mock=false` silently executes in mock
+mode (reads fixtures, no GPU), wasting a launch and producing fixture-shaped
+outputs the operator mistakes for real results.
+
+**Root cause**: Snakemake stores `--config` values as strings. The Snakefile used
+`MOCK: bool = bool(config["mock"])`, and `bool("false")` is `True`.
+
+**Fix**: a `_to_bool()` helper in the `Snakefile` treats the usual falsey string
+spellings (`false`/`0`/`no`/`off`/empty) as `False` and otherwise defers to
+Python truthiness; applied to `config["mock"]`. Any other string-flag config key
+consumed as a bool must route through `_to_bool()`.
+
+**First observed**: cycle 03 sub-run A launch.
+
+## Trap #35: `uv venv` hardlinks from `~/.cache/uv`, so `--force-reinstall` cannot replace a pinned wheel
+
+**Cycle**: 03 (pod env reconstruction).
+
+**Symptom**: re-pinning `nvidia-cudnn-cu12==9.1.0.70` with `pip install
+--force-reinstall` / `uv pip install` appears to succeed but the old cuDNN
+remains, because the cache still hardlinks it.
+
+**Fix**: `uv cache clean` + `rm -rf .venv` + `uv sync --all-extras`, then a final
+`pip install --force-reinstall --no-deps nvidia-cudnn-cu12==9.1.0.70`.
+
+**First observed**: cycle 03 pod env reconstruction (~2 h lost before the cache
+layer was understood).
+
+## Trap #36: `pip install` in SE3nv without `--no-deps` always pulls torch 2.x and destroys the env
+
+**Cycle**: 02 → 03 (RFdiffusion SE3nv env).
+
+**Symptom**: any `pip install PACKAGE` in the SE3nv conda env upgrades torch to
+2.x (transitive dep of every modern wheel), overwriting SE3nv's torch 1.9 and
+breaking RFdiffusion with cuDNN/CUDA errors.
+
+**Fix**: every SE3nv install uses `pip install --no-deps PACKAGE`; resolve
+missing deps one at a time, each with `--no-deps`. After 2–3 failed
+version-juggling attempts, switch strategy — the answer is `--no-deps`
+discipline, not another version combination.
+
+**First observed**: cycle 03 SE3nv reconstruction (~4 h lost).
+
+## Trap #37: RunPod network volumes are region-locked
+
+**Cycle**: 02 → 03 (pod migration US-CA-2 → US-WA-1).
+
+**Symptom**: files written on the US-CA-2 volume are invisible to US-WA-1 pods;
+the cycle-02 hero PDB had to be re-uploaded after migration.
+
+**Fix**: keep critical artifacts as git-tracked fixtures, or re-upload them as
+part of the pod-restart procedure.
+
+**First observed**: cycle 03 pod migration.
+
+## Trap #38: stale mock outputs make Snakemake skip real stages
+
+**Cycle**: 03.
+
+**Symptom**: after a `--config mock=true` run, a later `--config mock=false` run
+of the same cycle reports "Nothing to do" — Snakemake sees the existing
+(mock) outputs and skips the real stages.
+
+**Fix**: `rm -rf results/cycle_NN/stageX results/cycle_NN/stageX+1` before
+launching a real run from a mock state.
+
+**First observed**: cycle 03.
+
+## Trap #39: the 30 GB container overlay is too small for /tmp during RFdiffusion + pytest
+
+**Cycle**: 03.
+
+**Symptom**: `OSError: [Errno 28] No space left on device: '/tmp/...'`. RFdiffusion
+writes Hydra logs to `/tmp`; pytest's `tmp_path` accumulates under `/tmp`.
+
+**Fix**: `export TMPDIR=/workspace/.cache/tmp` in **every** new shell before any
+pipeline/pytest/RFdiffusion work (the network volume has 200+ TB). Set TMPDIR to
+a path **outside** any tree that a test or build copies recursively, or the copy
+re-ingests its own growing tmp and explodes.
+
+**First observed**: cycle 03 (and re-encountered while developing the Stage 2
+truncated PR — a TMPDIR placed inside the repo was recursively self-copied by a
+Snakemake end-to-end test).
+
+## Trap #40: HLA-CA RMSD is NOT predictive of BAKER scaffold transfer quality
+
+**Cycle**: 03 (sub-run A analysis).
+
+**Symptom**: the intuitive prior "well-aligned scaffold ⇒ clean transfer ⇒
+higher pass rate" is false. Cross-tab on sub-run A: low-RMSD scaffolds (<1 Å, the
+A\*02:01-native population, n=56) passed at 38%; high-RMSD scaffolds (≥3 Å,
+cross-allele, n=96) passed at 54%.
+
+**Why**: well-aligned scaffolds inherit their *original* peptide-targeting bias
+(designed against MART-1/gp100/NY-ESO, not WT1); badly-aligned scaffolds get
+"twisted" by the alignment routine, which incidentally repositions the binder
+toward the WT1 groove.
+
+**Methodological consequence**: cycle 04 should pre-filter by binder-to-peptide
+CA proximity, **not** HLA-HLA structural similarity. Any pre-filter on the
+scaffold library by HLA-CA RMSD is the wrong mental model — flag it explicitly.
+
+**First observed**: cycle 03 sub-run A cross-tab.
+
+## Trap #41: chain identities downstream of RFdiffusion must match the upstream tool's actual output convention — per sub-run, not per stage
+
+**Cycle**: 03 (Stage 2 truncated path).
+
+**Symptom**: a tool downstream of RFdiffusion that assumes "the binder is always
+chain X" silently computes garbage when a new sub-run uses a different chain
+layout. Concretely: cycle-02 designs are 4-chain (binder=D); sub-run A designs
+are 3-chain (binder=A from RFdiffusion, then C after the truncated splice). A
+metrics call hardcoded to the full layout (`binder="D"`) on a 3-chain truncated
+prediction finds no chain D → empty interface → iPAE `+inf`, with no error.
+
+**Root cause**: same family as Traps #29/#31 — an idealized "binder is chain X"
+belief embedded in code, when the true binder chain is set by the upstream
+tool's output convention and differs **per sub-run**, not per stage.
+
+**Fix**:
+- The truncated path forks `splice_binder_subrun_a` (3-chain A=binder, B=HLA,
+  C=peptide → A=HLA, B=peptide, C=binder) and threads `target_layout` through
+  `run_stage2` so splice / MPNN `--chain_list` / FASTA order / metrics all agree
+  on `LAYOUT_CHAINS["truncated"]` (binder=C). The cycle-02 4-chain path is
+  untouched.
+- New sub-run paths must document the chain layout end-to-end (RFdiffusion
+  output → splice → MPNN designed chain → AF2 FASTA order → metrics decomposition)
+  **before** code is written; do not let a new sub-run silently fall through a
+  helper written for a different layout (see PROJECT_STATE §12.i/j).
+
+**Recurrence guard**:
+- `tests/test_stage2_subrun_a.py`: splice reorders to A=HLA/B=peptide/C=binder
+  and rejects a 4-chain design; FASTA is `HLA:peptide:binder`; MPNN
+  `assign_fixed_chains.py --chain_list` receives `C`; `metrics_for_design(...,
+  target_layout="truncated")` populates the decomposed sub-metrics; and a mock
+  end-to-end run yields finite iPAE/ipLDDT (a leaked full layout would give
+  `+inf` on the 3-chain prediction).
+- `tests/test_controls_truncated.py` (pre-existing) locks the full-vs-truncated
+  layout selection in `compute_metrics`.
+
+**First observed**: cycle 03 Stage 2 truncated path implementation.

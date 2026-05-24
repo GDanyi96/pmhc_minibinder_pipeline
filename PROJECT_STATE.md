@@ -18,8 +18,8 @@
   - **Cycle 3 controls (truncated target): validated** — P1 iPAE 3.33, P2 3.73, N1 22.0, ~18 Å dynamic range. Halt thresholds recalibrated to iPAE≤6.0, ipLDDT≥92.
   - **Cycle 3 Stage 1 sub-run A (BAKER scaffold library + partial diffusion): complete, 72/150 (48%) geometry-pass, median 6.5 hotspot contacts, 98 min wall on A100.**
   - Cycle 3 Stage 1 sub-run B (hero seed partial diffusion): **deferred, blocked** — see §16.
-  - Cycle 3 Stage 2 truncated path: **pending, blocked** — see §16.
-- **Immediate next step**: open Stage 2 truncated PR with CC (see §16). Then open Trap #33 filename fix PR. Then optionally sub-run B.
+  - Cycle 3 Stage 2 truncated path: **implemented (mock-validated), pending pod real-run** — see §16. Trap #33 filename fix landed in the same PR.
+- **Immediate next step**: pod real-run of Stage 2 sub-run A (`snakemake results/cycle_03/stage2/subrun_a/stage2_summary.json --config cycle=03 mock=false -j1`) to produce final heroes. Then optionally sub-run B (needs `_derive_contigs_subrun_b`, out of scope of this PR).
 
 ---
 
@@ -119,7 +119,7 @@ Always anchor claims to one of these. Mark structural prediction outputs as pred
 | Stage 2 — controls (full target) | ✓ Validated cycle 1 | `scripts/run_controls.py --target=full` |
 | **Stage 2 — controls (truncated)** | ✓ **NEW cycle 03** — validated, recalibrated halt gates | `scripts/run_controls.py --target=truncated`, `results/cycle_03/controls_truncated_baseline/metrics_truncated_baseline.json` |
 | Stage 2 — designs (cycle 02 full target) | ✓ Complete, design_2079_seq00 hero | `scripts/run_stage2.py`, `workflow/scripts/splice_binder.py` (4-chain expected) |
-| **Stage 2 — designs (cycle 03 truncated sub-run A)** | 🔴 **Blocked, not implemented** — `splice_binder.py` expects 4-chain (cycle 02 layout); sub-run A designs are 3-chain. FASTA construction must reorder to `HLA:peptide:binder`. **Will crash on splice as expected stopping point if Stage 2 attempts to run.** | Pending PR (§16) |
+| **Stage 2 — designs (cycle 03 truncated sub-run A)** | ✓ **NEW cycle 03 — implemented (mock-validated; pending pod real-run).** Forked `splice_binder_subrun_a` (3-chain → A=HLA, B=peptide, C=binder); `run_stage2 --target-layout truncated` threads layout through splice/MPNN(`--chain_list C`)/FASTA(`HLA:peptide:binder`)/metrics. Snakemake rule `stage2_subrun_a` (explicit target). | `scripts/run_stage2.py`, `workflow/scripts/splice_binder.py::splice_binder_subrun_a`, `workflow/rules/02c_stage2_subrun_a.smk`, `tests/test_stage2_subrun_a.py` |
 | Stage 3 (in silico cross-pan) | Architected, not coded | spec TBD |
 | Stage 4 (embedding diversity curation) | Architected, not coded | spec TBD |
 | Stage 5 (MD validation) | Cycle 4+ | deferred |
@@ -197,7 +197,7 @@ Numbered for stable cross-reference. Authoritative numbering — `docs/known_tra
 
 32. **Partial diffusion STILL requires `contigmap.contigs` — it is the residue mask, not an optional bias.** Cycle 03 launch dies on first `run_inference.py` with `Must either specify a contig string or precise mapping.` Earlier guidance that the key was "unused by partial diffusion" was wrong. Per `/workspace/RFdiffusion/README.md` "Partial diffusion": `contigmap.contigs=[100-100/0 B1-150]` style — **bare `N-N` for binder (unprefixed = redesigned), letter-prefixed for motif (preserved).** Mistakenly using `A1-N` for binder slot would tell RFdiffusion to preserve chain A as motif → defeats partial diffusion entirely. **Fix**: `_derive_contigs_subrun_a` in `partial_diffuse.py` derives `[N-N/0 B1-180/0 C1-9]` per-design from aligned scaffold's chain-A length. Pre-flight `ValueError` guard if chain A absent. Don't conflate with `ppi.hotspot_res` (IS optional in partial mode). **Recurrence guard**: `test_derive_contigs_subrun_a_80mer`, `test_partial_diffuse_one_passes_contigs`.
 
-33. **🚨 OPEN — Partial diffusion filename mismatch.** `partial_diffuse_one` constructs `inference.output_prefix=designs/design_{seed}` AND `inference.design_startnum={seed}`. RFdiffusion appends `_{startnum}` to whatever prefix is passed → produces `design_{seed}_{seed}.pdb` (double-suffix). Enumeration in `run_stage1_subrun.py` and `run_stage2.py` looks for `design_{seed}.pdb` (single). Cycle 03 sub-run A symptom: 150 designs successfully written, 0 enumerated, `subrun_summary.json` reports `n_completed: 0`, no error thrown. **Recovery hack (applied this session)**: symlinks `design_NNNN.pdb -> design_NNNN_NNNN.pdb`, then re-trigger Stage 1 (existence check follows symlinks, skips RFdiffusion subprocess, runs only geometry scoring). **Permanent fix (PENDING PR)**: in `partial_diffuse.partial_diffuse_one`, construct `out_prefix` WITHOUT seed embedded (`designs_dir / "design"`), let `design_startnum` produce the suffix → `design_{seed}.pdb` ✓. **Test**: writer/reader contract test exercising real subprocess command + enumeration glob together. This is **Trap #28's twin** — same writer/reader filename drift class, different cycle, same lesson.
+33. **✅ RESOLVED (Stage 2 truncated PR) — Partial diffusion filename mismatch.** `partial_diffuse_one` constructed `inference.output_prefix=designs/design_{seed}` AND `inference.design_startnum={seed}`. RFdiffusion appends `_{startnum}` to whatever prefix is passed → produced `design_{seed}_{seed}.pdb` (double-suffix). Enumeration in `run_stage1_subrun.py` and `run_stage2.py` looks for `design_{seed}.pdb` (single). Cycle 03 sub-run A symptom: 150 designs successfully written, 0 enumerated, `subrun_summary.json` reports `n_completed: 0`, no error thrown. **Recovery hack (cycle 03 session)**: symlinks `design_NNNN.pdb -> design_NNNN_NNNN.pdb`, then re-trigger Stage 1 (existence check follows symlinks, skips RFdiffusion subprocess, runs only geometry scoring). **Permanent fix (LANDED)**: `partial_diffuse.partial_diffuse_one` now pins the prefix base to `out_prefix.parent / "design"` (caller stem ignored) and lets `design_startnum` produce the suffix → `design_{seed}.pdb` ✓. The symlink hack is no longer needed for new runs. **Tests**: `test_partial_diffuse_one_prefix_has_no_seed` (writer) + `test_subrun_a_writer_reader_filename_roundtrip` (real command + enumeration glob together). This is **Trap #28's twin** — same writer/reader filename drift class, different cycle, same lesson.
 
 34. **`snakemake --config mock=false` stores "false" as STRING; `bool("false")` is True.** Snakefile uses `MOCK: bool = bool(config["mock"])` which evaluates `bool("false") == True` — pipeline silently runs in mock mode when user requested real. **Fix (applied pod-locally + committed)**: `_to_bool()` helper handling string + bool cases. Affects every Snakemake config key that the user passes as string flag.
 
@@ -212,6 +212,8 @@ Numbered for stable cross-reference. Authoritative numbering — `docs/known_tra
 39. **Container overlay disk (30 GB) is TOO SMALL for /tmp during RFdiffusion + pytest.** Symptom: `OSError: [Errno 28] No space left on device: '/tmp/...'`. Pytest `tmp_path` fixture creates `pytest-0` accumulating subdirs that can't extend past 10 numbered tries. RFdiffusion writes Hydra logs to `/tmp` by default. **Fix**: `export TMPDIR=/workspace/.cache/tmp` in EVERY new shell before any pipeline work. Network volume `/workspace` has 200+ TB.
 
 40. **🆕 HLA-CA RMSD is NOT predictive of BAKER scaffold transfer quality.** Counter-intuitive cycle 03 finding. Cross-tab: low-RMSD scaffolds (<1Å, the BAKER A\*02:01-native population, n=56) had 38% pass; high-RMSD scaffolds (≥3Å, the cross-allele population, n=96) had 54% pass. Reasoning: well-aligned scaffolds inherit their ORIGINAL peptide-targeting bias (designed against MART-1/gp100/NY-ESO etc., not WT1); badly-aligned scaffolds get "twisted" by the alignment routine which incidentally repositions binders. **Methodological consequence**: cycle 04 should filter by binder-to-peptide CA proximity, not HLA-HLA structural similarity. **Recurrence guard**: any pre-filter on scaffold library by HLA-CA RMSD is the WRONG mental model — log this explicitly when CC proposes such filters.
+
+41. **🆕 Chain identities downstream of RFdiffusion must match the upstream tool's ACTUAL output convention — per sub-run, not per stage.** A tool that assumes "binder is always chain X" computes garbage silently when a new sub-run uses a different layout. Cycle-02 designs are 4-chain (binder=D); sub-run A designs are 3-chain (binder=A from RFdiffusion → C after the truncated splice). A metrics call hardcoded to `binder="D"` on a 3-chain truncated prediction finds no chain D → empty interface → iPAE `+inf`, no error. Same family as Traps #29/#31. **Fix**: the truncated Stage 2 path forks `splice_binder_subrun_a` (A=HLA, B=peptide, C=binder) and threads `target_layout` through `run_stage2` so splice / MPNN `--chain_list C` / FASTA `HLA:peptide:binder` / metrics all agree on `LAYOUT_CHAINS["truncated"]`; the cycle-02 4-chain path is untouched. **Rule**: document a new sub-run's chain layout end-to-end before writing code (see §12.i/j). **Recurrence guard**: `tests/test_stage2_subrun_a.py` (splice reorder + 4-chain rejection, FASTA order, MPNN chain dispatch, truncated metrics decomposition, mock end-to-end finite iPAE) + `tests/test_controls_truncated.py`.
 
 ---
 
@@ -390,7 +392,7 @@ Stubbed (`results/cycle_03/stage1/subrun_b/{subrun_summary.json, designs.jsonl}`
 
 ### Stage 2 truncated status
 
-Not implemented. `splice_binder.py` (cycle 02) expects 4-chain input; sub-run A produces 3-chain. FASTA construction must reorder to `HLA:peptide:binder` to match `LAYOUT_CHAINS["truncated"]`. **Will crash on splice as expected stopping point if Stage 2 is attempted before its PR lands.**
+**Implemented (mock-validated; pending pod real-run).** `splice_binder_subrun_a` composes the 3-chain truncated complex (A=HLA, B=peptide, C=binder); `run_stage2 --target-layout truncated` threads the layout through splice → ProteinMPNN (`--chain_list C`) → FASTA (`HLA:peptide:binder`) → `compute_metrics` (`LAYOUT_CHAINS["truncated"]`). Stage 1 verdict gate accepts sub-run summaries via `_stage1_verdict` (derives PASS from `fraction_geometry_pass >= HALT_THRESHOLD`, imported from `run_stage1`). New Snakemake rule `stage2_subrun_a` (explicit target, not in `rule all`). Real-run command on pod: `snakemake results/cycle_03/stage2/subrun_a/stage2_summary.json --config cycle=03 mock=false -j1`.
 
 ### Pull requests in flight
 
@@ -401,17 +403,18 @@ Not implemented. `splice_binder.py` (cycle 02) expects 4-chain input; sub-run A 
 
 Neither merged to main. Cycle 03 results live on `feat/cycle-03-baker-truncation`.
 
-### Pod-local uncommitted hotfixes (NEED COMMITTING)
+### Pod-local hotfixes
 
 | File | Change | Status |
 |---|---|---|
-| `Snakefile` | `_to_bool()` helper (Trap #34) | Patched on pod, uncommitted |
-| `configs/af2_stage2.yaml` | halt_cut_ipae_max 10.0 → 6.0, halt_cut_iplddt_min 88.0 → 92.0 | Patched on pod, uncommitted |
-| `results/cycle_03/stage1/subrun_a/designs/*.pdb` | 150 symlinks: `design_NNNN.pdb -> design_NNNN_NNNN.pdb` (Trap #33 recovery) | Not committed (gitignored results/), but pod state depends on them — DO NOT delete |
+| `Snakefile` | `_to_bool()` helper (Trap #34) | ✓ **Committed** (Stage 2 truncated PR) |
+| `configs/af2_stage2.yaml` | halt_cut_ipae_max 10.0 → 6.0, halt_cut_iplddt_min 88.0 → 92.0 | ✓ **Committed** (Stage 2 truncated PR) |
+| `results/cycle_03/stage1/subrun_a/designs/*.pdb` | 150 symlinks: `design_NNNN.pdb -> design_NNNN_NNNN.pdb` (Trap #33 recovery) | Not committed (gitignored results/); pod state still depends on them for the already-burned run — DO NOT delete. New runs produce single-suffix names natively (Trap #33 fixed), so future symlinks are unnecessary. |
 
 ### Recurrence guards needed (test specs for next CC PR)
 
-- Writer/reader contract test for `partial_diffuse_one` filename output (Trap #33).
+- ✅ Writer/reader contract test for `partial_diffuse_one` filename output (Trap #33) — **done** (`test_partial_diffuse_one_prefix_has_no_seed`, `test_subrun_a_writer_reader_filename_roundtrip`).
+- ✅ Sub-run A real-path Stage 2 mock canary (3-chain design → FASTA → AF2 → metrics) — **done** (`tests/test_stage2_subrun_a.py`).
 - Frame-preservation assertion test for `prep_baker_target.py` (preserves coords during truncation).
 - Sub-run A real-path Stage 2 mock canary (synthetic 3-chain design → FASTA → AF2 → metrics).
 
