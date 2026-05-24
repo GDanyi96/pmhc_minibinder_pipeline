@@ -783,3 +783,34 @@ tool's output convention and differs **per sub-run**, not per stage.
   layout selection in `compute_metrics`.
 
 **First observed**: cycle 03 Stage 2 truncated path implementation.
+
+## Trap #42: stage2_subrun_a mock branch bypasses its declared input (temporary layout mismatch)
+
+**Cycle**: 03 (Stage 2 truncated path).
+
+**Symptom**: the `stage2_subrun_a` Snakemake rule's **mock** branch reads dedicated
+3-chain truncated fixtures (`tests/fixtures/stage2/designs_truncated/{subrun_summary.json,
+mock_truncated_target.yaml}`) via `params.mock_summary`/`mock_manifest` instead of
+consuming its declared `input.subrun_summary`. A reader expecting "mock consumes
+the rule's declared input" is surprised.
+
+**Root cause**: the upstream `stage1_subrun_a` **mock** still synthesizes
+**4-chain** designs (`partial_diffuse._synthesize_mock_design` writes A/B/C + D),
+but the truncated Stage 2 splice (`splice_binder_subrun_a`) requires a 3-chain
+design (A=binder, B=HLA, C=peptide) and deliberately rejects 4-chain input. So the
+mock Stage 2 truncated path cannot consume the mock Stage 1 truncated output as-is;
+it uses purpose-built 3-chain fixtures instead. The declared `input.subrun_summary`
+still gates DAG ordering, and the **real** branch reads it correctly.
+
+**Fix / action**: re-couple the mock branch to `input.subrun_summary` once the
+`stage1_subrun_a` mock is updated to emit truncated 3-chain designs (a
+`_synthesize_mock_truncated_design` producing A=binder/B=HLA/C=peptide). Until
+then the bypass is intentional and documented. A `TODO(Trap #42)` comment marks the
+mock branch in `workflow/rules/02c_stage2_subrun_a.smk`.
+
+**Recurrence guard**: `tests/test_stage2_subrun_a.py::test_subrun_a_stage2_mock_end_to_end`
+exercises the truncated mock path on the dedicated 3-chain fixtures; the real
+branch's input wiring is verified by the dry-run DAG
+(`results/cycle_03/stage2/subrun_a/stage2_summary.json`).
+
+**First observed**: cycle 03 Stage 2 truncated path implementation.

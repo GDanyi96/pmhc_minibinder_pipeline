@@ -47,6 +47,13 @@ rule stage2_subrun_a:
         r"""
         mkdir -p {params.out_dir}
         if [ "{params.mock}" = "True" ]; then
+            # TODO(Trap #42): this mock branch reads the dedicated 3-chain
+            # truncated fixtures (params.mock_summary/mock_manifest) instead of the
+            # declared input.subrun_summary, because the stage1_subrun_a mock still
+            # synthesizes 4-chain designs (which the truncated splice rejects).
+            # Re-couple to input.subrun_summary once stage1_subrun_a mock produces
+            # truncated 3-chain designs. The real branch below already reads the
+            # declared inputs correctly.
             python scripts/run_stage2.py \
                 --mock --cycle {params.cycle} \
                 --target-layout truncated \
