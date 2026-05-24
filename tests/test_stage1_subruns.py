@@ -101,9 +101,7 @@ def test_subrun_a_writer_reader_filename_roundtrip(
         return [aligned]
 
     def fake_rfdiffusion_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
-        prefix = next(
-            a.split("=", 1)[1] for a in cmd if a.startswith("inference.output_prefix=")
-        )
+        prefix = next(a.split("=", 1)[1] for a in cmd if a.startswith("inference.output_prefix="))
         startnum = next(
             a.split("=", 1)[1] for a in cmd if a.startswith("inference.design_startnum=")
         )
@@ -111,7 +109,9 @@ def test_subrun_a_writer_reader_filename_roundtrip(
         _write_ca_pdb(Path(f"{prefix}_{startnum}.pdb"), {"A": 71, "B": 180, "C": 9})
 
     monkeypatch.setattr(run_stage1_subrun.align_scaffolds, "align_scaffolds", fake_align)
-    monkeypatch.setattr(run_stage1_subrun.partial_diffuse, "_resolve_rfdiffusion_python", lambda: "python")
+    monkeypatch.setattr(
+        run_stage1_subrun.partial_diffuse, "_resolve_rfdiffusion_python", lambda: "python"
+    )
     monkeypatch.setattr(run_stage1_subrun.partial_diffuse.subprocess, "run", fake_rfdiffusion_run)
     monkeypatch.setattr(run_stage1_subrun, "_file_sha256", lambda p: "deadbeef")
     monkeypatch.setattr(run_stage1_subrun, "_git_sha", lambda p: "abc1234")

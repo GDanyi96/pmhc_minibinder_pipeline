@@ -39,6 +39,7 @@ from Bio.PDB.Structure import Structure
 from Bio.SeqUtils import seq1
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scripts.run_stage1 import HALT_THRESHOLD as STAGE1_HALT_THRESHOLD
 from workflow.scripts import (
     aggregate_mpnn_outputs,
     compute_metrics,
@@ -63,7 +64,34 @@ PROTEINMPNN_DIR = Path(os.environ.get("PROTEINMPNN_DIR", "/workspace/ProteinMPNN
 _PMHC_TARGET_CHAINS = ("A", "B", "C")
 _BINDER_CHAIN = "D"
 
+# Cycle 03 sub-run A (truncated, 3-chain). After splice_binder_subrun_a the
+# spliced complex is A=HLA, B=peptide, C=binder (AF2 FASTA order matching
+# LAYOUT_CHAINS["truncated"]); the truncated cleaned target carries HLA on B and
+# peptide on C. See PROJECT_STATE 12.j and docs/known_traps.md.
+_TRUNCATED_BINDER_CHAIN = "C"
+_TRUNCATED_TARGET_CHAINS = ("B", "C")
+_VALID_TARGET_LAYOUTS = ("full", "truncated")
+
 HaltStatus = Literal["pass", "halt"]
+
+
+def _stage1_verdict(stage1: dict[str, Any]) -> str:
+    """Resolve Stage 1's pass/fail verdict for the Stage 2 entry gate.
+
+    The cycle-02 merged ``stage1_summary.json`` carries an explicit
+    ``halt_rule.verdict``. The cycle-03 sub-run summaries
+    (``run_stage1_subrun``) carry ``fraction_geometry_pass`` but no
+    ``halt_rule``. Derive the verdict from the *shared* Stage 1 threshold
+    (imported, not re-literalled) so Stage 1 and Stage 2 never disagree on
+    "did Stage 1 pass".
+    """
+    halt = stage1.get("halt_rule")
+    if isinstance(halt, dict) and "verdict" in halt:
+        return str(halt["verdict"])
+    frac = stage1.get("fraction_geometry_pass")
+    if frac is not None:
+        return "PASS" if float(frac) >= STAGE1_HALT_THRESHOLD else "FAIL"
+    return "MISSING"
 
 
 def _resolve_proteinmpnn_python() -> str:
@@ -122,26 +150,40 @@ def _resolve_cleaned_pdb(cleaned_pdb: str, manifest_path: Path) -> Path:
     return candidate
 
 
-def _splice_all(backbone_pdbs: list[Path], cleaned_pmhc: Path, spliced_dir: Path) -> list[Path]:
+def _splice_all(
+    backbone_pdbs: list[Path],
+    cleaned_pmhc: Path,
+    spliced_dir: Path,
+    target_layout: str = "full",
+) -> list[Path]:
     spliced_dir.mkdir(parents=True, exist_ok=True)
+    splice_fn = (
+        splice_binder.splice_binder_subrun_a
+        if target_layout == "truncated"
+        else splice_binder.splice_binder_onto_pmhc
+    )
     spliced_paths: list[Path] = []
     for backbone in backbone_pdbs:
         out_pdb = spliced_dir / backbone.name
-        splice_binder.splice_binder_onto_pmhc(backbone, cleaned_pmhc, out_pdb)
+        splice_fn(backbone, cleaned_pmhc, out_pdb)
         spliced_paths.append(out_pdb)
     return spliced_paths
 
 
-def _extract_target_chain_sequences(cleaned_pdb: Path) -> dict[str, str]:
-    """Read chains A, B, C from the cleaned pMHC and return their
-    one-letter amino acid sequences. Chain order in the multimer FASTA
-    is fixed at A=HC, B=beta2m, C=peptide (binder appears as D).
+def _extract_target_chain_sequences(
+    cleaned_pdb: Path, chains: tuple[str, ...] = _PMHC_TARGET_CHAINS
+) -> dict[str, str]:
+    """Read the given chains from the cleaned pMHC and return their one-letter
+    amino acid sequences, keyed by chain id.
+
+    ``full`` reads A=HC, B=beta2m, C=peptide. ``truncated`` reads B=HLA[1:180]
+    and C=peptide from the BAKER groove-only target (no chain A / beta2m).
     """
     parser = PDBParser(QUIET=True)
     structure: Structure = parser.get_structure(cleaned_pdb.stem, str(cleaned_pdb))
     model = structure[0]
     seqs: dict[str, str] = {}
-    for cid in _PMHC_TARGET_CHAINS:
+    for cid in chains:
         if cid not in model:
             raise ValueError(f"{cleaned_pdb}: missing target chain {cid!r}")
         residues = [r for r in model[cid].get_residues() if r.id[0].strip() == ""]
@@ -168,11 +210,20 @@ def _build_multimer_fasta(
     record_id: str,
     target_seqs: dict[str, str],
     binder_seq: str,
+    target_layout: str = "full",
 ) -> None:
-    """ColabFold multimer FASTA: a single record with colon-separated
-    chains in PDB order A:B:C:D. No trailing colon. Trap #7.
+    """ColabFold multimer FASTA: a single record with colon-separated chains.
+    No trailing colon. Trap #7.
+
+    - ``full`` (cycle 02): order A:B:C:D (HC:beta2m:peptide:binder).
+    - ``truncated`` (cycle 03 sub-run A): order HLA:peptide:binder, sourced from
+      the truncated cleaned target's chains B (HLA) and C (peptide), so the AF2
+      output is A=HLA, B=peptide, C=binder per LAYOUT_CHAINS["truncated"].
     """
-    body = ":".join((target_seqs["A"], target_seqs["B"], target_seqs["C"], binder_seq))
+    if target_layout == "truncated":
+        body = ":".join((target_seqs["B"], target_seqs["C"], binder_seq))
+    else:
+        body = ":".join((target_seqs["A"], target_seqs["B"], target_seqs["C"], binder_seq))
     fasta_path.parent.mkdir(parents=True, exist_ok=True)
     fasta_path.write_text(f">{record_id}\n{body}\n")
 
@@ -199,9 +250,15 @@ def _run_real_proteinmpnn(
     work_dir: Path,
     cfg: dict[str, Any],
     seed: int,
+    binder_chain: str = _BINDER_CHAIN,
 ) -> list[Path]:
     """Drive upstream dauparas/ProteinMPNN via the canonical 3-step
     multi-PDB batch pattern. One model load for the whole batch.
+
+    ``binder_chain`` is the designed chain passed to ``assign_fixed_chains.py
+    --chain_list`` (everything else is held fixed): "D" for the cycle-02 full
+    layout, "C" for the cycle-03 sub-run A truncated layout (HLA=A, peptide=B,
+    binder=C).
 
     Returns per-design ``.fa`` paths under ``mpnn_out/seqs/`` ordered to
     match ``spliced_pdbs``.
@@ -233,7 +290,7 @@ def _run_real_proteinmpnn(
         "--output_path",
         str(chains_jsonl),
         "--chain_list",
-        _BINDER_CHAIN,
+        binder_chain,
     ]
     logger.info("ProteinMPNN assign: %s", assign_cmd)
     subprocess.run(assign_cmd, check=True, env={**os.environ})
@@ -282,6 +339,7 @@ def _run_real_colabfold(
     fasta_dir: Path,
     predictions_dir: Path,
     cfg: dict[str, Any],
+    target_layout: str = "full",
 ) -> None:
     """Write one multimer FASTA per ranked record and invoke
     ``colabfold_batch`` for the whole batch. No --use-gpu-relax
@@ -293,7 +351,9 @@ def _run_real_colabfold(
     for rec in top_records:
         record_id = f"{rec['design_id']}_seq{int(rec['seq_id']):02d}"
         fasta_path = fasta_dir / f"{record_id}.fasta"
-        _build_multimer_fasta(fasta_path, record_id, target_seqs, str(rec["seq"]))
+        _build_multimer_fasta(
+            fasta_path, record_id, target_seqs, str(rec["seq"]), target_layout=target_layout
+        )
         ids.append(record_id)
 
     cmd = [
@@ -316,8 +376,10 @@ def _run_real_colabfold(
     _reshape_flat_outputs(predictions_dir, ids)
 
 
-def _copy_mock_mpnn_outputs(backbones: list[Path], per_design_root: Path) -> list[Path]:
-    src_dir = MOCK_FIXTURES_DIR / "mpnn_outputs"
+def _copy_mock_mpnn_outputs(
+    backbones: list[Path], per_design_root: Path, mock_fixtures_dir: Path = MOCK_FIXTURES_DIR
+) -> list[Path]:
+    src_dir = mock_fixtures_dir / "mpnn_outputs"
     fastas: list[Path] = []
     for backbone in backbones:
         dest_dir = per_design_root / backbone.stem
@@ -329,8 +391,12 @@ def _copy_mock_mpnn_outputs(backbones: list[Path], per_design_root: Path) -> lis
     return fastas
 
 
-def _copy_mock_af2_predictions(top_records: list[dict[str, Any]], predictions_root: Path) -> None:
-    src_root = MOCK_FIXTURES_DIR / "af2_predictions"
+def _copy_mock_af2_predictions(
+    top_records: list[dict[str, Any]],
+    predictions_root: Path,
+    mock_fixtures_dir: Path = MOCK_FIXTURES_DIR,
+) -> None:
+    src_root = mock_fixtures_dir / "af2_predictions"
     predictions_root.mkdir(parents=True, exist_ok=True)
     for rec in top_records:
         pred_id = f"{rec['design_id']}_seq{rec['seq_id']}"
@@ -443,8 +509,16 @@ def run(
     out_dir: Path,
     mock: bool,
     metrics_only: bool,
+    target_layout: str = "full",
+    cleaned_pmhc_override: Path | None = None,
 ) -> int:
     started_at = time.time()
+    if target_layout not in _VALID_TARGET_LAYOUTS:
+        logger.error(
+            "invalid target_layout %r (expected one of %s)", target_layout, _VALID_TARGET_LAYOUTS
+        )
+        return 1
+    binder_chain = _TRUNCATED_BINDER_CHAIN if target_layout == "truncated" else _BINDER_CHAIN
 
     if metrics_only:
         summary_path = out_dir / "stage2_summary.json"
@@ -462,12 +536,15 @@ def run(
         logger.error("stage1 summary missing: %s", stage1_summary_path)
         return 1
     stage1 = json.loads(stage1_summary_path.read_text())
-    if stage1.get("halt_rule", {}).get("verdict") != "PASS":
+    if _stage1_verdict(stage1) != "PASS":
         logger.error("Stage 1 verdict is not PASS at %s; cannot proceed", stage1_summary_path)
         return 1
 
     target = _load_target(target_manifest)
-    cleaned_pmhc = _resolve_cleaned_pdb(target.primary.cleaned_pdb, target_manifest)
+    if cleaned_pmhc_override is not None:
+        cleaned_pmhc = cleaned_pmhc_override
+    else:
+        cleaned_pmhc = _resolve_cleaned_pdb(target.primary.cleaned_pdb, target_manifest)
     af2_cfg = yaml.safe_load(af2_config.read_text())
     mpnn_cfg = yaml.safe_load(mpnn_config.read_text())
     seeds = aggregate_mpnn_outputs._load_seeds(seeds_config)
@@ -520,12 +597,16 @@ def run(
 
     out_dir.mkdir(parents=True, exist_ok=True)
     spliced_dir = out_dir / "proteinmpnn_designs" / "spliced"
-    spliced_pdbs = _splice_all(backbones, cleaned_pmhc, spliced_dir)
+    spliced_pdbs = _splice_all(backbones, cleaned_pmhc, spliced_dir, target_layout=target_layout)
     (spliced_dir / ".done").touch()
 
+    # Mock MPNN/AF2 fixtures are co-located with the Stage 1 backbones the
+    # mock run consumed, so the truncated fixture set (3-chain predictions) is
+    # used for the truncated path rather than the 4-chain full-layout default.
+    mock_fixtures_dir = stage1_summary_path.parent
     per_design_root = out_dir / "proteinmpnn_designs" / "per_design"
     if mock:
-        per_design_fastas = _copy_mock_mpnn_outputs(backbones, per_design_root)
+        per_design_fastas = _copy_mock_mpnn_outputs(backbones, per_design_root, mock_fixtures_dir)
     else:
         # Cycle 02 seed contract: a single MPNN seed governs the whole
         # batch (one-call invocation; per-design / per-sample seeding is
@@ -534,7 +615,9 @@ def run(
         batch_seed = aggregate_mpnn_outputs._compute_mpnn_seed(cycle, 0, 0, seeds)
         mpnn_work_dir = out_dir / "proteinmpnn_designs" / "mpnn_work"
         mpnn_work_dir.mkdir(parents=True, exist_ok=True)
-        per_design_fastas = _run_real_proteinmpnn(spliced_pdbs, mpnn_work_dir, mpnn_cfg, batch_seed)
+        per_design_fastas = _run_real_proteinmpnn(
+            spliced_pdbs, mpnn_work_dir, mpnn_cfg, batch_seed, binder_chain=binder_chain
+        )
 
     design_records: list[dict[str, str | int | None]] = [
         {
@@ -570,13 +653,25 @@ def run(
 
     predictions_root = out_dir / "af2_designs" / "predictions"
     if mock:
-        _copy_mock_af2_predictions(top_records, predictions_root)
+        _copy_mock_af2_predictions(top_records, predictions_root, mock_fixtures_dir)
     else:
-        target_seqs = _extract_target_chain_sequences(cleaned_pmhc)
+        target_chains = (
+            _TRUNCATED_TARGET_CHAINS if target_layout == "truncated" else _PMHC_TARGET_CHAINS
+        )
+        target_seqs = _extract_target_chain_sequences(cleaned_pmhc, chains=target_chains)
         fasta_dir = out_dir / "af2_designs" / "fastas"
-        _run_real_colabfold(top_records, target_seqs, fasta_dir, predictions_root, af2_cfg)
+        _run_real_colabfold(
+            top_records,
+            target_seqs,
+            fasta_dir,
+            predictions_root,
+            af2_cfg,
+            target_layout=target_layout,
+        )
 
-    metric_records = _compute_metrics_for_predictions(top_records, predictions_root, mock=mock)
+    metric_records = _compute_metrics_for_predictions(
+        top_records, predictions_root, mock=mock, target_layout=target_layout
+    )
     _write_jsonl(metric_records, out_dir / "af2_designs" / "metrics.jsonl")
 
     summary = _build_summary(
@@ -629,6 +724,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--mock", action="store_true")
     parser.add_argument(
+        "--target-layout",
+        choices=_VALID_TARGET_LAYOUTS,
+        default="full",
+        help="full = cycle-02 4-chain (binder D); truncated = cycle-03 sub-run A 3-chain (binder C).",
+    )
+    parser.add_argument(
+        "--cleaned-pmhc",
+        type=Path,
+        default=None,
+        help="Override the cleaned target PDB for splice/FASTA (truncated path supplies "
+        "the BAKER groove-only target instead of the manifest's full cleaned_pdb).",
+    )
+    parser.add_argument(
         "--metrics-only",
         action="store_true",
         help="Skip splice + MPNN + ColabFold + compute_metrics; re-read existing stage2_summary.json.",
@@ -649,6 +757,8 @@ def main(argv: list[str] | None = None) -> int:
         out_dir=out_dir,
         mock=args.mock,
         metrics_only=args.metrics_only,
+        target_layout=args.target_layout,
+        cleaned_pmhc_override=args.cleaned_pmhc,
     )
 
 
