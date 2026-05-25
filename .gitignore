@@ -247,6 +247,11 @@ wandb/
 !results/**/stage1/rfdiffusion/samples/*.pdb
 !results/**/stage2/**/samples/*.pdb
 
+# Cycle 03 sub-run A: BAKER scaffold library is symlinked in pod-side by
+# setup_cycle03_inputs.py; ignore all contents but keep the dir tracked.
+data/scaffolds/baker_library/*
+!data/scaffolds/baker_library/.gitkeep
+
 # Model weights are downloaded by bootstrap.sh; never tracked
 models/
 *.pt

@@ -60,6 +60,42 @@ rule; the underlying numbers passed under the current biology-correct rule.
 Halt gate margin intact: iPAE gap 20.0 Å (threshold ≥10), ipLDDT gap 59.8
 (threshold ≥30). See trap #20 for the GPU-drift envelope.
 
+## Cycle 03 prep (2026-05-21)
+
+Prep-only PR (`claude/cycle-03-prep-g2Eu9`) wiring the cycle-03 architecture;
+no GPU / no real run yet. Addresses cycle-02's placement deficit (65% of
+designs made zero hotspot contact, one hero out of 200) by switching Stage 1
+from de-novo RFdiffusion to **partial diffusion** from two seeded sub-runs.
+
+- **Stage 1 mode switch**: `Snakefile` now derives `stage1_mode` from the
+  cycle (`partial` when cycle >= 3, else `denovo`; overridable via
+  `--config stage1_mode=`). A conditional `ruleorder` selects either the
+  legacy `rule rfdiffusion` or the new `stage1_merge` (sub-runs A+B), both of
+  which emit the canonical `stage1/rfdiffusion/{stage1_summary.json,
+  designs.jsonl}`. Cycle 01/02 paths are unchanged.
+- **Sub-run A** (`rule stage1_subrun_a`): BAKER scaffold library →
+  `align_scaffolds.py` (BioPython superposition onto `3hpj_clean.pdb`, a
+  Rosetta-free `align_chainB.py` equivalent) → `partial_diffuse.py`
+  (`partial_T=15`). **Sub-run B**: cycle-02 hero seed complex →
+  `partial_diffuse.py` (`partial_T=10`). `partial_T` values are conservative
+  blind defaults (recalibrate in cycle 04).
+- **Stage 2 cycle-03 changes**: Ala-counter-bias MPNN config
+  (`proteinmpnn_cycle03.yaml` + `proteinmpnn_bias_aa.json`, Trap #30); a
+  BioPython peptide-contact gate (`contact_filter.py`, C-beta ≤ 5 Å); AF2
+  iPAE decomposed into `ppi_pae_int_peptide` / `ppi_pae_int_mhc`
+  (`compute_metrics.py`); halt tightened to iPAE ≤ 10, `num_recycles=6`,
+  `fan_in_top_n=100` (`af2_stage2.yaml`).
+- **Pod-only artefacts** (BAKER scaffolds, `design_2079` hero) stay gitignored
+  and are materialized on the pod by `setup_cycle03_inputs.py` (symlink
+  scaffolds + stitch the hero chain D onto `3hpj_clean.pdb`). CC develops
+  against mock fixtures (`tests/fixtures/baker_library_mock/`,
+  `tests/fixtures/design_2079_mock_seed.pdb`).
+- **Verification**: `snakemake --config mock=true cycle=99 -j1` runs the full
+  partial-diffusion DAG end to end (sub-runs → merge → Stage 2 → report),
+  `cycle=01` legacy path stays green, ruff/black/mypy/pytest all pass.
+- **Deferred to cycle 04**: the ProteinMPNN peptide-context specificity
+  (`mpnn_spec_filter`) filter — see `specs/stage3_spec_filter.md`.
+
 ## Pointers
 
 - `CLAUDE.md` — rulebook, locked decisions, controls panel summary.

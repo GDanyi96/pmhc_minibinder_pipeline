@@ -457,3 +457,29 @@ never tested against the real RFdiffusion writer.
 contract drift hidden by mock-aligned canary. The general lesson stands:
 any fixture that synthesises its own producer output verifies only the
 consumer, never the contract.
+
+## Trap #30: RFdiffusion crude-sequence output is Ala-heavy by design
+
+**Cycle**: 02 → 03 (Stage 1 / Stage 2 boundary).
+
+**Symptom**: cycle-02 designs (and BAKER's published `scaf*.pdb`) carry an
+alarmingly high alanine fraction in their as-emitted sequences — ~38% in the
+BAKER scaffold library, ~40.4% in our cycle-02 hero `design_2079`. This looks
+like a degenerate/broken design at first glance.
+
+**Root cause**: this is **not** a pipeline bug. RFdiffusion only generates
+backbone coordinates; the residue identities it writes are a crude
+placeholder driven by the model's compositional prior, which is strongly
+Ala-biased. The real sequence is assigned downstream by ProteinMPNN, which
+redesigns every binder position. BAKER's `scaf*.pdb` are explicitly
+crude-sequence scaffolds for exactly this reason.
+
+**Implication / fix**:
+- Never read meaning into the raw RFdiffusion / scaffold sequence; always let
+  ProteinMPNN redesign (it already does — `design_chains: [D]`).
+- Cycle 03 additionally counter-biases the prior with
+  `configs/proteinmpnn_bias_aa.json` (`A: -2.0`, `E/L/R: +1.0`) wired via
+  `--bias_AA_jsonl` in `scripts/run_stage2.py`, so MPNN is nudged away from
+  Ala and toward BAKER's redesigned-binder composition.
+- Do not "fix" Ala-rich backbones upstream; the lever is the MPNN bias, not
+  the diffusion step.

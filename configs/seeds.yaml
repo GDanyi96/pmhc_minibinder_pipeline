@@ -24,6 +24,13 @@ reserved:
   cycle_02_rfdiffusion: [2000, 2199]
   cycle_02_proteinmpnn: [2200, 2999]
   cycle_02_af2_fanin:   [3000, 3099]
+  # Cycle 03: partial-diffusion subruns share the rfdiffusion range.
+  # Sub-run A (BAKER scaffolds) takes indices 0..149 (3000-3149); sub-run B
+  # (design_2079 seed) takes indices 150..179 (3150-3179) via the
+  # `seed_offset` keys in rfdiffusion_subrun_{a,b}.yaml.
+  cycle_03_rfdiffusion: [3000, 3199]
+  cycle_03_proteinmpnn: [3200, 3999]
+  cycle_03_af2_fanin:   [4000, 4099]
   # Mock cycle 99: `--cycle 99` smoke tests. Each stage gets its own
   # 100-seed slot so the assertion bounds remain stage-specific.
   cycle_99_rfdiffusion: [99000, 99199]

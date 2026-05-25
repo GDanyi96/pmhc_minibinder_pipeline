@@ -1,0 +1,37 @@
+# Cycle 03 -- Sub-run A: partial diffusion from the BAKER scaffold library.
+#
+# Source scaffolds are BAKER lab's published pMHC-I binder scaffolds
+# (BAKER_LAB_2025), symlinked into data/scaffolds/baker_library/ by
+# workflow/scripts/setup_cycle03_inputs.py (pod-side). Each scaffold's
+# target chain is aligned onto our 3hpj_clean.pdb (align_scaffolds.py)
+# before partial diffusion so the diffused binder lands in our target frame.
+#
+# partial_T is the number of reverse diffusion steps applied to a noised
+# copy of the input. RFdiffusion's partial-diffusion examples
+# (/workspace/RFdiffusion/examples/partial_*) use values in the 10-20
+# range; there is no published optimum for pMHC scaffold reuse. We pick 15
+# for sub-run A (vs 10 for our own hero in sub-run B): the BAKER scaffolds
+# are foreign backbones that need more remodeling to adapt to the WT1/A*02:01
+# interface, so a slightly larger partial_T gives the model more freedom.
+# This is a conservative blind default -- recalibrate in cycle 04 once the
+# cycle-03 empirical pass rate is known.
+
+inference:
+  num_designs: 150
+  ckpt_override_path: /workspace/models/RFdiffusion/Complex_base_ckpt.pt
+
+denoiser:
+  noise_scale_ca: 0       # HADRUP_JENKINS_2025
+  noise_scale_frame: 0
+
+# Partial diffusion: noise + partially denoise the existing scaffold rather
+# than build de novo from a contig length range.
+partial_T: 15
+
+# Index range within the cycle's reserved rfdiffusion seed range. Sub-run A
+# occupies the first 150 slots; sub-run B starts at 150 (see subrun_b yaml).
+seed_offset: 0
+
+scaffolds:
+  aligned_glob: data/scaffolds/baker_library/scaf*.pdb
+  reference_pdb: data/targets/3hpj_clean.pdb

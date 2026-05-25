@@ -32,6 +32,7 @@ One-line description per tracked file. New file? Add a line here.
 - `specs/stage2_proteinmpnn_af2.md` — Stage 2 real-designs contract: MPNN + AF2 fan-in + halt gate on Stage 1 outputs.
 - `specs/stage2_controls.md` — Stage 2 controls contract (P1-N2 literature binders, cycle 1).
 - `specs/stage3_crosspan.md` — In silico cross-reactivity panning against off-target peptide grid.
+- `specs/stage3_spec_filter.md` — Placeholder (cycle 04): ProteinMPNN peptide-context specificity filter; distinct from crosspan.
 - `specs/stage4_diversity.md` — ESM-2 embeddings + farthest-point sampling diversity selection.
 - `specs/stage5_active_learning.md` — LightGBM + GP surrogate, UCB acquisition for next cycle.
 - `specs/stage6_reporting.md` — Cycle aggregation, publication figures, decision log.
@@ -39,7 +40,10 @@ One-line description per tracked file. New file? Add a line here.
 ## workflow/rules/
 
 - `workflow/rules/00_target_prep.smk` — Download/clean target PDBs, emit target.yaml.
-- `workflow/rules/01_rfdiffusion.smk` — Run RFdiffusion to generate N backbones.
+- `workflow/rules/01_rfdiffusion.smk` — Run RFdiffusion to generate N backbones (cycle ≤ 02 de-novo path).
+- `workflow/rules/01_stage1_subrun_a.smk` — Cycle 03 sub-run A: align BAKER scaffolds + partial diffusion.
+- `workflow/rules/01_stage1_subrun_b.smk` — Cycle 03 sub-run B: partial diffusion from the design_2079 hero seed.
+- `workflow/rules/01_stage1_merge.smk` — Cycle 03: merge sub-runs A+B into the canonical Stage 1 output + halt gate.
 - `workflow/rules/02_proteinmpnn.smk` — Design sequences on each backbone.
 - `workflow/rules/03_colabfold.smk` — AF2-multimer prediction via ColabFold.
 - `workflow/rules/04_metrics.smk` — Compute iPAE, ipLDDT, NLL filters.
@@ -55,6 +59,10 @@ One-line description per tracked file. New file? Add a line here.
 - `workflow/scripts/__init__.py` — Marks workflow.scripts as a package (mypy + imports).
 - `workflow/scripts/prep_target.py` — Stage 0 entry point.
 - `workflow/scripts/run_rfdiffusion.py` — Stage 1 entry point.
+- `workflow/scripts/align_scaffolds.py` — Cycle 03: BioPython superposition of BAKER scaffolds onto the reference (align_chainB.py equivalent).
+- `workflow/scripts/partial_diffuse.py` — Cycle 03: RFdiffusion partial-diffusion wrapper (mock synthesizes geometry-passing 4-chain designs).
+- `workflow/scripts/contact_filter.py` — Cycle 03: BioPython binder↔peptide C-beta contact gate.
+- `workflow/scripts/setup_cycle03_inputs.py` — Pod-only one-shot: symlink BAKER scaffolds + stitch the design_2079 seed complex.
 - `workflow/scripts/run_proteinmpnn.py` — Stage 2a: ProteinMPNN complex-mode wrapper. **DEPRECATED for real-mode** (cycle 02+); mock paths retained for cycle-1 controls. Real-mode bypasses this and invokes upstream ProteinMPNN directly from `scripts/run_stage2.py`.
 - `workflow/scripts/run_colabfold.py` — Stage 2b: ColabFold (AF2-multimer) native wrapper.
 - `workflow/scripts/compute_metrics.py` — Stage 2c: iPAE / ipLDDT / BSA computation.
@@ -72,6 +80,8 @@ One-line description per tracked file. New file? Add a line here.
 - `scripts/run_controls.py` — Stage 2 Part A controls orchestrator + halt gate.
 - `scripts/run_stage1.py` — Stage 1 RFdiffusion orchestrator + geometry-pass halt gate.
 - `scripts/run_stage2.py` — Stage 2 designs orchestrator (splice + MPNN + AF2 fan-in + halt gate at fraction_pass_intermediate >= 0.10).
+- `scripts/run_stage1_subrun.py` — Cycle 03: drives one partial-diffusion sub-run (A or B); emits per-subrun designs.jsonl + summary.
+- `scripts/merge_stage1_subruns.py` — Cycle 03: merge sub-runs A+B into canonical stage1 output + geometry halt gate.
 
 ## configs/
 
@@ -82,12 +92,18 @@ One-line description per tracked file. New file? Add a line here.
 - `configs/seeds.yaml` — Stage 1 seed formula (`cycle * 1000 + design_index`) + per-cycle reserved ranges.
 - `configs/proteinmpnn_chains.json` — Per-PDB chain assignment for ProteinMPNN complex mode.
 - `configs/proteinmpnn_default.yaml` — Stage 2 designs MPNN sampling defaults (T=0.1, 4 seqs/backbone, chain D designed).
-- `configs/af2_stage2.yaml` — Stage 2 designs AF2 fan-in config (top-100, intermediate cut iPAE<12/ipLDDT>88, halt 0.10).
+- `configs/af2_stage2.yaml` — Stage 2 designs AF2 fan-in config (cycle 03: top-100, num_recycles=6, intermediate cut iPAE<10/ipLDDT>88, halt 0.10).
+- `configs/rfdiffusion_subrun_a.yaml` — Cycle 03 sub-run A partial-diffusion config (BAKER scaffolds, partial_T=15).
+- `configs/rfdiffusion_subrun_b.yaml` — Cycle 03 sub-run B partial-diffusion config (design_2079 seed, partial_T=10).
+- `configs/proteinmpnn_cycle03.yaml` — Cycle 03 MPNN config; adds bias_AA_jsonl to counter the Ala-heavy prior (Trap #30).
+- `configs/proteinmpnn_bias_aa.json` — ProteinMPNN --bias_AA_jsonl: A:-2.0, E/L/R:+1.0.
 
 ## data/
 
 - `data/targets/.gitkeep` — PDB files land here (downloaded by bootstrap.sh).
 - `data/controls/controls_manifest.yaml` — P1, P2, P3, N1, N2 control definitions.
+- `data/scaffolds/baker_library/.gitkeep` — BAKER scaffolds symlinked here pod-side (setup_cycle03_inputs.py); contents gitignored.
+- `data/seeds/.gitkeep` — design_2079 seed complex stitched here pod-side; contents gitignored.
 
 ## docs/
 
@@ -105,10 +121,18 @@ One-line description per tracked file. New file? Add a line here.
 - `tests/test_splice_binder.py` — Splice helper unit tests (chain rename A->D, residue renumbering, defensive asserts).
 - `tests/test_aggregate_mpnn_outputs.py` — MPNN FASTA parsing + MPNN/AF2 seed range + uniqueness tests.
 - `tests/test_stage2_designs_halt_gate.py` — Stage 2 designs orchestrator + halt-gate tests (pass-at-boundary + fail paths).
+- `tests/test_align_scaffolds.py` — Cycle 03 align_scaffolds superposition tests.
+- `tests/test_partial_diffuse.py` — Cycle 03 partial_diffuse mock synthesis + geometry-pass tests.
+- `tests/test_contact_filter.py` — Cycle 03 contact_filter peptide-contact gate tests.
+- `tests/test_af2_metrics_decomposition.py` — Cycle 03 decomposed iPAE (peptide/MHC) sub-metric tests.
+- `tests/test_stage1_subruns.py` — Cycle 03 sub-run + merge orchestrator tests (pass + fail halt paths).
 - `tests/test_run_stage2.py` — Stage 2 real-mode helper tests (multimer FASTA writer, target chain sequence extraction, binder-length manifest loader).
 - `tests/fixtures/target_3hpj_clean.pdb` — 1-line ATOM stub for stage 0 primary.
 - `tests/fixtures/target_2bnr_clean.pdb` — 1-line ATOM stub for stage 0 positive control.
 - `tests/fixtures/rfdiffusion/sample.pdb` — Stage 1 cycle-1 stub backbone (legacy).
+- `tests/fixtures/baker_library_mock/_make_fixtures.py` — Generator for the 3 mock BAKER scaffolds + the stitched design_2079 seed.
+- `tests/fixtures/baker_library_mock/scaf{0,1,2}.pdb` — 3 synthetic mini BAKER scaffolds (binder chain A + truncated target chain B).
+- `tests/fixtures/design_2079_mock_seed.pdb` — Synthetic 4-chain design_2079 seed complex (A/B/C motif + chain D binder).
 - `tests/fixtures/stage1/_make_fixtures.py` — Deterministic generator for the Stage 1 mock fixtures.
 - `tests/fixtures/stage1/mock_clean.pdb` — Synthetic cleaned PDB with all 8 hotspot Ca residues.
 - `tests/fixtures/stage1/mock_target.yaml` — Pre-built TargetManifest for Stage 1 mock smoke tests.

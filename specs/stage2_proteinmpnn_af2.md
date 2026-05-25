@@ -219,3 +219,50 @@ and `_compute_af2_seed`, both of which assert range membership against
 - [ ] CI green on `uv sync --extra dev`.
 - [ ] Fresh-clone preflight green before push.
 - [ ] Real pod run on cycle 02 deferred to post-merge; this PR ships mock-CI-green only.
+
+---
+
+## Cycle 03 changes
+
+Cycle 03 keeps the MPNN → splice → AF2 fan-in shape but tightens it and adds a
+placement gate. All changes are real-mode (the mock 4/40 halt-gate calibration
+is preserved unchanged).
+
+### ProteinMPNN amino-acid bias (`configs/proteinmpnn_cycle03.yaml`)
+
+RFdiffusion's crude-sequence prior is Ala-heavy (Trap #30). Cycle 03 selects
+`proteinmpnn_cycle03.yaml` (via `MPNN_DESIGNS_CONFIG` in the Snakefile, cycle
+≥ 3) which adds `bias_AA_jsonl: configs/proteinmpnn_bias_aa.json`
+(`A: -2.0`, `E/L/R: +1.0`, BAKER redesigned-binder composition reference).
+`scripts/run_stage2.py::_run_real_proteinmpnn` passes `--bias_AA_jsonl` when
+the config carries it.
+
+### Contact filter (`workflow/scripts/contact_filter.py`)
+
+A Rosetta-free BioPython gate inserted **between MPNN and AF2** in the real
+funnel: keep a design only if its binder (chain D) makes ≥ `min_contacts`
+C-beta atoms within `distance` Å (default 5.0 Å) of any peptide (chain C)
+atom. This discards mis-placed binders cheaply, before the expensive AF2
+fan-in — the direct lever against the cycle-02 placement deficit. It is
+unit-tested and spec'd here; it is intentionally **not** inserted into the
+mock Snakemake DAG so the existing Stage 2 4/40 halt calibration is untouched.
+
+### Decomposed iPAE (`workflow/scripts/compute_metrics.py`)
+
+BAKER's `ppi_pae_int` is our combined iPAE (D ↔ A+B+C). `metrics_for_design`
+now also emits `ppi_pae_int_peptide` (D ↔ C) and `ppi_pae_int_mhc` (D ↔ A+B),
+so we can tell binders that grip the specificity-bearing peptide apart from
+binders that only hold the conserved MHC framework. Surfaced in
+`af2_designs/metrics.jsonl` (real mode).
+
+### Tighter funnel (`configs/af2_stage2.yaml`)
+
+Promoted from the cycle-02 PoC to the asymptotic spec: `num_recycles = 6`,
+`fan_in_top_n = 100`, and the intermediate halt cut tightened to
+`halt_cut_ipae_max = 10.0` (was 12.0). The halt rule and `>=` boundary
+semantics are otherwise unchanged.
+
+### Deferred to cycle 04
+
+The ProteinMPNN peptide-context **specificity filter** (`mpnn_spec_filter/`)
+is planned but not implemented here — see `specs/stage3_spec_filter.md`.
