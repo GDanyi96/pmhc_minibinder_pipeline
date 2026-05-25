@@ -483,3 +483,334 @@ crude-sequence scaffolds for exactly this reason.
   Ala and toward BAKER's redesigned-binder composition.
 - Do not "fix" Ala-rich backbones upstream; the lever is the MPNN bias, not
   the diffusion step.
+
+## Trap #31: BAKER scaffold alignment requires chain B = HLA truncated; the full target with β2m causes silent geometric mismatch
+
+**Cycle**: 03 (Stage 1 sub-run A prep).
+
+**Symptom**: aligning BAKER's published `scaf*.pdb` library onto our
+canonical `data/targets/3hpj_clean.pdb` produces binders sitting in the wrong
+place — partial diffusion then starts from garbage geometry and burns ~6 h of
+A100 on designs that can never pass. No exception is raised; the alignment
+"succeeds" with a plausible-looking RMSD.
+
+**Root cause**: chain-layout mismatch. Each BAKER scaffold carries the target
+as a single **chain B = HLA-A\*02:01 α1+α2 (residues 1-180) fused to the 9-mer
+peptide** (189 continuous residues), binder on chain A. Our `3hpj_clean.pdb`
+follows the crystal convention: chain A = HC (~275), **chain B = β2m**, chain C
+= peptide. The old `align_scaffolds.py` superposed *scaffold chain B onto
+reference chain B* — i.e. HLA α1/α2 CA atoms onto β2m CA atoms. β2m and the
+HLA groove are unrelated folds, so the recovered rigid transform is meaningless
+even though the CA-count match and RMSD look fine.
+
+**Fix**:
+- `workflow/scripts/prep_baker_target.py` produces a BAKER-format truncated
+  target `data/targets/3hpj_baker_truncated.pdb`: keep HC residues 1-180
+  (α1+α2), rename A→B, drop β2m, keep peptide as chain C. Layout now matches
+  BAKER's groove-only fragment (chain B = HLA, chain C = peptide).
+- `workflow/scripts/align_baker_scaffolds.py` superposes the scaffold's chain-B
+  HLA substring (first 180 CA) onto the truncated reference's chain B, then
+  rewrites the complex into our standard `A=binder / B=HLA / C=peptide` layout.
+- `align_scaffolds.align_scaffolds(..., baker_layout=True)` dispatches to it;
+  sub-run A (`rule stage1_subrun_a`) passes the truncated target as the align
+  `--reference-pdb` while the geometry/motif reference stays the full target.
+- Sub-run B (full target, `design_2079`) is unaffected: it was AF2-validated
+  against the full 4-chain target and keeps `3hpj_clean.pdb`.
+- Truncation also shifts the AF2 chain layout for sub-run A and its
+  recalibrated controls to 3-chain `A=HLA, B=peptide, C=binder`;
+  `compute_metrics` selects the binder/peptide/MHC chains via
+  `LAYOUT_CHAINS[target_layout]` so decomposed iPAE stays correct.
+
+**Recurrence guard**:
+- `tests/test_prep_baker_target.py` asserts the truncated target has exactly
+  CA counts `{B: 180, C: 9}`, no chain A, no β2m, numbering preserved.
+- `tests/test_align_baker_scaffolds.py` asserts the aligned output is
+  `A=binder / B=HLA[180] / C=peptide[9]` and that the HLA-substring
+  superposition recovers a known +100 Å translation (RMSD ≈ 0).
+- `tests/test_controls_truncated.py` asserts the full-layout default
+  (`binder="D"`) finds **no** interface on a 3-chain truncated prediction,
+  while the truncated layout decomposes iPAE correctly — locking in the
+  adapter that prevents the silent mismatch from re-entering the metrics.
+
+**First observed**: cycle 03 sub-run A prep, before any A100 time was spent.
+
+---
+
+## Trap #32: partial diffusion still requires contigmap.contigs (it is the residue mask, not an optional bias)
+
+**Cycle**: 03 (Stage 1 sub-run A, first real launch).
+
+**Symptom**: sub-run A dies on the **first** `run_inference.py` invocation with
+`Must either specify a contig string or precise mapping.` No design is produced;
+the run never reaches the GPU diffusion loop.
+
+**Root cause**: `partial_diffuse.partial_diffuse_one` built the RFdiffusion
+command without `contigmap.contigs`, on the false belief that the contig is only
+needed for de-novo generation (or that it is an optional hotspot bias). It is
+neither: RFdiffusion uses `contigmap.contigs` as the **residue mask in every
+mode**, partial diffusion included. Per `/workspace/RFdiffusion/README.md`
+("Partial diffusion"):
+
+> Anything prefixed by a letter indicates that this is a motif, with the letter
+> corresponding to the chain letter in the input pdb files. Anything not
+> prefixed by a letter indicates protein to be built.
+
+> if you have a binder:target complex, and you want to diversify the binder
+> (length 100, chain A), you would need to input something like this:
+> `contigmap.contigs=[100-100/0 B1-150]` `diffuser.partial_T=20`
+
+Do **not** conflate this with `ppi.hotspot_res`, which *is* optional in partial
+mode.
+
+**Fix**:
+- `partial_diffuse._derive_contigs_subrun_a(aligned_scaffold_pdb)` reads the
+  aligned scaffold's chain-A binder length `N` (layout A=binder, B=HLA[1:180],
+  C=peptide[1:9]) and returns `[N-N/0 B1-180/0 C1-9]`. The binder slot is a
+  **bare `N-N`** range (unprefixed = redesigned); `B`/`C` are **letter-prefixed
+  motifs** (preserved). An `A`-prefixed binder slot would tell RFdiffusion to
+  *preserve* chain A, defeating partial diffusion (the BAKER scaffolds would
+  come back essentially unchanged).
+- `partial_diffuse_one` appends `contigmap.contigs={contig}` to the command;
+  a pre-flight `ValueError` fires if chain A is empty/malformed, so a bad mask
+  is caught before the subprocess rather than swallowed by RFdiffusion's
+  generic error.
+- Knock-on (same root layout): the bare-`N-N` binder makes RFdiffusion write the
+  designed binder as chain **A** in a 3-chain output (A=binder, B=HLA,
+  C=peptide). Stage 1's geometry gate (`_binder_ca_coords`) identifies the
+  binder by exclusion from `fixed_chains`; the full manifest's `{A,B,C}` would
+  leave no candidate and crash scoring. `run_stage1_subrun._fixed_chains_for_subrun`
+  returns `{B,C}` for real sub-run A so chain A is the unique binder.
+
+**Recurrence guard**:
+- `tests/test_partial_diffuse.py`: `_derive_contigs_subrun_a` on an 80-mer
+  scaffold returns `[80-80/0 B1-180/0 C1-9]`; an empty chain A raises
+  `ValueError`; and `partial_diffuse_one`'s emitted command contains
+  `contigmap.contigs=[80-80/0 B1-180/0 C1-9]`.
+- `tests/test_stage1_subruns.py`: `_fixed_chains_for_subrun` returns `{B,C}`
+  for real sub-run A, and an end-to-end `run(subrun="a", mock=False)` on a
+  3-chain design scores `binder_length == 80` without crashing (call-site
+  guard — a helper test alone could pass the right `fixed_chains` while the real
+  path passes the wrong one; cf. Trap #28).
+
+**Note**: the original Stage 1 PR covered Stage 1 only — real sub-run A then
+produced 3-chain designs that Stage 2's `splice_binder` (4-chain binder-on-D
+expectation) could not consume. The truncated Stage 2 path landed in a follow-up
+(Trap #33, now RESOLVED below).
+
+**First observed**: cycle 03 sub-run A, first real pod launch.
+
+## Trap #33: partial-diffusion filename writer/reader mismatch (RESOLVED)
+
+**Cycle**: 03 (Stage 1 sub-run A, first 150-design production run).
+
+**Status**: **RESOLVED** — fixed in the cycle-03 Stage 2 truncated PR (commit
+"fix: derive correct partial_diffuse output_prefix without seed"). The earlier
+recovery hack (per-design symlinks `design_NNNN.pdb -> design_NNNN_NNNN.pdb`) is
+no longer needed for new runs.
+
+**Symptom**: 150 designs ran to completion (98.5 min A100 wall, no exception),
+but `subrun_summary.json` reported `n_completed: 0` and no design was enumerated
+for Stage 2. Healthy wall time with a zero count is the tell — designs *were*
+produced; enumeration could not find them.
+
+**Root cause**: writer/reader filename drift (Trap #28's twin). RFdiffusion
+*always* appends `_{design_startnum}` to whatever `inference.output_prefix` it
+is given. `partial_diffuse_one` passed `inference.output_prefix=design_{seed}`
+**and** `inference.design_startnum={seed}`, so RFdiffusion wrote
+`design_{seed}_{seed}.pdb` (double suffix). The enumerator in
+`run_stage1_subrun.py` (and `run_stage2.py`) globs the single-suffix
+`design_{seed}.pdb` → zero matches, silently.
+
+**Fix**: in `partial_diffuse.partial_diffuse_one`, pin the prefix base to
+`"design"` using only `out_prefix.parent` (the caller's stem is intentionally
+ignored) and let `design_startnum` supply the suffix → RFdiffusion writes
+`<out_dir>/design_{seed}.pdb`, matching the reader.
+
+**Recurrence guard**:
+- `tests/test_partial_diffuse.py::test_partial_diffuse_one_prefix_has_no_seed`
+  asserts the emitted command carries `inference.output_prefix=<dir>/design`
+  (no seed) and `inference.design_startnum={seed}`.
+- `tests/test_stage1_subruns.py::test_subrun_a_writer_reader_filename_roundtrip`
+  drives the real `partial_diffuse_one` + real enumeration with a stub that
+  emulates RFdiffusion's `_{startnum}` rule, asserting `n_completed == 1` and a
+  single-suffix `design_99000.pdb`. Reintroducing the seed into the prefix makes
+  this round-trip fail — the contract test that was missing when Trap #33 fired.
+
+**First observed**: cycle 03 sub-run A, first 150-design production run.
+
+## Trap #34: `snakemake --config mock=false` stores the string "false"; `bool("false")` is True
+
+**Cycle**: 03 (Stage 1 sub-run A launch).
+
+**Symptom**: a run invoked with `--config mock=false` silently executes in mock
+mode (reads fixtures, no GPU), wasting a launch and producing fixture-shaped
+outputs the operator mistakes for real results.
+
+**Root cause**: Snakemake stores `--config` values as strings. The Snakefile used
+`MOCK: bool = bool(config["mock"])`, and `bool("false")` is `True`.
+
+**Fix**: a `_to_bool()` helper in the `Snakefile` treats the usual falsey string
+spellings (`false`/`0`/`no`/`off`/empty) as `False` and otherwise defers to
+Python truthiness; applied to `config["mock"]`. Any other string-flag config key
+consumed as a bool must route through `_to_bool()`.
+
+**First observed**: cycle 03 sub-run A launch.
+
+## Trap #35: `uv venv` hardlinks from `~/.cache/uv`, so `--force-reinstall` cannot replace a pinned wheel
+
+**Cycle**: 03 (pod env reconstruction).
+
+**Symptom**: re-pinning `nvidia-cudnn-cu12==9.1.0.70` with `pip install
+--force-reinstall` / `uv pip install` appears to succeed but the old cuDNN
+remains, because the cache still hardlinks it.
+
+**Fix**: `uv cache clean` + `rm -rf .venv` + `uv sync --all-extras`, then a final
+`pip install --force-reinstall --no-deps nvidia-cudnn-cu12==9.1.0.70`.
+
+**First observed**: cycle 03 pod env reconstruction (~2 h lost before the cache
+layer was understood).
+
+## Trap #36: `pip install` in SE3nv without `--no-deps` always pulls torch 2.x and destroys the env
+
+**Cycle**: 02 → 03 (RFdiffusion SE3nv env).
+
+**Symptom**: any `pip install PACKAGE` in the SE3nv conda env upgrades torch to
+2.x (transitive dep of every modern wheel), overwriting SE3nv's torch 1.9 and
+breaking RFdiffusion with cuDNN/CUDA errors.
+
+**Fix**: every SE3nv install uses `pip install --no-deps PACKAGE`; resolve
+missing deps one at a time, each with `--no-deps`. After 2–3 failed
+version-juggling attempts, switch strategy — the answer is `--no-deps`
+discipline, not another version combination.
+
+**First observed**: cycle 03 SE3nv reconstruction (~4 h lost).
+
+## Trap #37: RunPod network volumes are region-locked
+
+**Cycle**: 02 → 03 (pod migration US-CA-2 → US-WA-1).
+
+**Symptom**: files written on the US-CA-2 volume are invisible to US-WA-1 pods;
+the cycle-02 hero PDB had to be re-uploaded after migration.
+
+**Fix**: keep critical artifacts as git-tracked fixtures, or re-upload them as
+part of the pod-restart procedure.
+
+**First observed**: cycle 03 pod migration.
+
+## Trap #38: stale mock outputs make Snakemake skip real stages
+
+**Cycle**: 03.
+
+**Symptom**: after a `--config mock=true` run, a later `--config mock=false` run
+of the same cycle reports "Nothing to do" — Snakemake sees the existing
+(mock) outputs and skips the real stages.
+
+**Fix**: `rm -rf results/cycle_NN/stageX results/cycle_NN/stageX+1` before
+launching a real run from a mock state.
+
+**First observed**: cycle 03.
+
+## Trap #39: the 30 GB container overlay is too small for /tmp during RFdiffusion + pytest
+
+**Cycle**: 03.
+
+**Symptom**: `OSError: [Errno 28] No space left on device: '/tmp/...'`. RFdiffusion
+writes Hydra logs to `/tmp`; pytest's `tmp_path` accumulates under `/tmp`.
+
+**Fix**: `export TMPDIR=/workspace/.cache/tmp` in **every** new shell before any
+pipeline/pytest/RFdiffusion work (the network volume has 200+ TB). Set TMPDIR to
+a path **outside** any tree that a test or build copies recursively, or the copy
+re-ingests its own growing tmp and explodes.
+
+**First observed**: cycle 03 (and re-encountered while developing the Stage 2
+truncated PR — a TMPDIR placed inside the repo was recursively self-copied by a
+Snakemake end-to-end test).
+
+## Trap #40: HLA-CA RMSD is NOT predictive of BAKER scaffold transfer quality
+
+**Cycle**: 03 (sub-run A analysis).
+
+**Symptom**: the intuitive prior "well-aligned scaffold ⇒ clean transfer ⇒
+higher pass rate" is false. Cross-tab on sub-run A: low-RMSD scaffolds (<1 Å, the
+A\*02:01-native population, n=56) passed at 38%; high-RMSD scaffolds (≥3 Å,
+cross-allele, n=96) passed at 54%.
+
+**Why**: well-aligned scaffolds inherit their *original* peptide-targeting bias
+(designed against MART-1/gp100/NY-ESO, not WT1); badly-aligned scaffolds get
+"twisted" by the alignment routine, which incidentally repositions the binder
+toward the WT1 groove.
+
+**Methodological consequence**: cycle 04 should pre-filter by binder-to-peptide
+CA proximity, **not** HLA-HLA structural similarity. Any pre-filter on the
+scaffold library by HLA-CA RMSD is the wrong mental model — flag it explicitly.
+
+**First observed**: cycle 03 sub-run A cross-tab.
+
+## Trap #41: chain identities downstream of RFdiffusion must match the upstream tool's actual output convention — per sub-run, not per stage
+
+**Cycle**: 03 (Stage 2 truncated path).
+
+**Symptom**: a tool downstream of RFdiffusion that assumes "the binder is always
+chain X" silently computes garbage when a new sub-run uses a different chain
+layout. Concretely: cycle-02 designs are 4-chain (binder=D); sub-run A designs
+are 3-chain (binder=A from RFdiffusion, then C after the truncated splice). A
+metrics call hardcoded to the full layout (`binder="D"`) on a 3-chain truncated
+prediction finds no chain D → empty interface → iPAE `+inf`, with no error.
+
+**Root cause**: same family as Traps #29/#31 — an idealized "binder is chain X"
+belief embedded in code, when the true binder chain is set by the upstream
+tool's output convention and differs **per sub-run**, not per stage.
+
+**Fix**:
+- The truncated path forks `splice_binder_subrun_a` (3-chain A=binder, B=HLA,
+  C=peptide → A=HLA, B=peptide, C=binder) and threads `target_layout` through
+  `run_stage2` so splice / MPNN `--chain_list` / FASTA order / metrics all agree
+  on `LAYOUT_CHAINS["truncated"]` (binder=C). The cycle-02 4-chain path is
+  untouched.
+- New sub-run paths must document the chain layout end-to-end (RFdiffusion
+  output → splice → MPNN designed chain → AF2 FASTA order → metrics decomposition)
+  **before** code is written; do not let a new sub-run silently fall through a
+  helper written for a different layout (see PROJECT_STATE §12.i/j).
+
+**Recurrence guard**:
+- `tests/test_stage2_subrun_a.py`: splice reorders to A=HLA/B=peptide/C=binder
+  and rejects a 4-chain design; FASTA is `HLA:peptide:binder`; MPNN
+  `assign_fixed_chains.py --chain_list` receives `C`; `metrics_for_design(...,
+  target_layout="truncated")` populates the decomposed sub-metrics; and a mock
+  end-to-end run yields finite iPAE/ipLDDT (a leaked full layout would give
+  `+inf` on the 3-chain prediction).
+- `tests/test_controls_truncated.py` (pre-existing) locks the full-vs-truncated
+  layout selection in `compute_metrics`.
+
+**First observed**: cycle 03 Stage 2 truncated path implementation.
+
+## Trap #42: stage2_subrun_a mock branch bypasses its declared input (temporary layout mismatch)
+
+**Cycle**: 03 (Stage 2 truncated path).
+
+**Symptom**: the `stage2_subrun_a` Snakemake rule's **mock** branch reads dedicated
+3-chain truncated fixtures (`tests/fixtures/stage2/designs_truncated/{subrun_summary.json,
+mock_truncated_target.yaml}`) via `params.mock_summary`/`mock_manifest` instead of
+consuming its declared `input.subrun_summary`. A reader expecting "mock consumes
+the rule's declared input" is surprised.
+
+**Root cause**: the upstream `stage1_subrun_a` **mock** still synthesizes
+**4-chain** designs (`partial_diffuse._synthesize_mock_design` writes A/B/C + D),
+but the truncated Stage 2 splice (`splice_binder_subrun_a`) requires a 3-chain
+design (A=binder, B=HLA, C=peptide) and deliberately rejects 4-chain input. So the
+mock Stage 2 truncated path cannot consume the mock Stage 1 truncated output as-is;
+it uses purpose-built 3-chain fixtures instead. The declared `input.subrun_summary`
+still gates DAG ordering, and the **real** branch reads it correctly.
+
+**Fix / action**: re-couple the mock branch to `input.subrun_summary` once the
+`stage1_subrun_a` mock is updated to emit truncated 3-chain designs (a
+`_synthesize_mock_truncated_design` producing A=binder/B=HLA/C=peptide). Until
+then the bypass is intentional and documented. A `TODO(Trap #42)` comment marks the
+mock branch in `workflow/rules/02c_stage2_subrun_a.smk`.
+
+**Recurrence guard**: `tests/test_stage2_subrun_a.py::test_subrun_a_stage2_mock_end_to_end`
+exercises the truncated mock path on the dedicated 3-chain fixtures; the real
+branch's input wiring is verified by the dry-run DAG
+(`results/cycle_03/stage2/subrun_a/stage2_summary.json`).
+
+**First observed**: cycle 03 Stage 2 truncated path implementation.

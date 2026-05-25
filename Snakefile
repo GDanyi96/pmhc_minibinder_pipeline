@@ -6,12 +6,26 @@
 
 from pathlib import Path
 
+
+def _to_bool(value: object) -> bool:
+    """Coerce a Snakemake `--config` value to bool.
+
+    `--config mock=false` stores the *string* "false", and `bool("false")`
+    is True — so a user requesting real mode would silently run mock (Trap
+    #34). Treat the usual falsey string spellings as False; otherwise defer
+    to Python truthiness (covers real bools and the string "true").
+    """
+    if isinstance(value, str):
+        return value.strip().lower() not in {"false", "0", "no", "off", ""}
+    return bool(value)
+
+
 # Default config: real-mode, cycle 01.
 config.setdefault("mock", False)
 config.setdefault("cycle", "01")
 
 CYCLE: str = str(config["cycle"]).zfill(2)
-MOCK: bool = bool(config["mock"])
+MOCK: bool = _to_bool(config["mock"])
 RESULTS = Path(f"results/cycle_{CYCLE}")
 FIXTURES = Path("tests/fixtures")
 
@@ -39,6 +53,7 @@ include: "workflow/rules/02_proteinmpnn.smk"
 include: "workflow/rules/03_colabfold.smk"
 include: "workflow/rules/04_metrics.smk"
 include: "workflow/rules/02b_proteinmpnn_designs.smk"
+include: "workflow/rules/02c_stage2_subrun_a.smk"
 include: "workflow/rules/03b_af2_designs.smk"
 include: "workflow/rules/05_crosspan.smk"
 include: "workflow/rules/06_embedding.smk"

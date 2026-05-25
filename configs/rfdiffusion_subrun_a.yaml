@@ -15,6 +15,15 @@
 # interface, so a slightly larger partial_T gives the model more freedom.
 # This is a conservative blind default -- recalibrate in cycle 04 once the
 # cycle-03 empirical pass rate is known.
+#
+# contigmap.contigs is NOT configured here -- RFdiffusion requires it in
+# partial-diffusion mode as the residue mask (Trap #32), but it is *derived
+# per-design* from each aligned scaffold's chain-A binder length by
+# partial_diffuse._derive_contigs_subrun_a, since BAKER scaffolds vary in
+# binder size. The binder slot is a bare N-N range (unprefixed = redesigned);
+# the static target portion is the letter-prefixed motif "B1-180/0 C1-9"
+# (preserved), matching the truncated layout (chain B = HLA[1:180], C =
+# peptide[1:9]). Do not add a static contigmap.contigs key.
 
 inference:
   num_designs: 150
@@ -32,6 +41,15 @@ partial_T: 15
 # occupies the first 150 slots; sub-run B starts at 150 (see subrun_b yaml).
 seed_offset: 0
 
+# Alignment reference is the BAKER-format truncated target (chain B = HLA
+# alpha1+alpha2 residues 1-180, chain C = peptide RMFPNAPYL residues 1-9; no
+# beta2m, no alpha3). BAKER scaffolds carry the target as a fused chain B
+# (HLA[1:180]+peptide), so they must be aligned against this groove-only
+# fragment, not the full 3hpj_clean.pdb whose chain B is beta2m -- aligning
+# HLA onto beta2m silently produces garbage geometry (Trap #31). Produced by
+# workflow/scripts/prep_baker_target.py; see specs/stage0_target_specification.md.
+# Peptide-facing groove hotspots for this target: C1,C4,C6,C8 (peptide) and
+# B65,B66,B150,B155 (HLA alpha-helix walls, renamed A->B by the truncation).
 scaffolds:
   aligned_glob: data/scaffolds/baker_library/scaf*.pdb
-  reference_pdb: data/targets/3hpj_clean.pdb
+  reference_pdb: data/targets/3hpj_baker_truncated.pdb

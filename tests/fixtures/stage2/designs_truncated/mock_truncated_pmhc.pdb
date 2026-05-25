@@ -1,0 +1,8 @@
+HEADER    STAGE2 SUBRUN-A TRUNCATED MOCK FIXTURE
+ATOM      1  CA  ALA B  65       0.000   0.000   0.000  1.00  0.00           C
+ATOM      2  CA  ALA B  66       3.800   0.000   0.000  1.00  0.00           C
+ATOM      3  CA  ALA B 150       7.600   0.000   0.000  1.00  0.00           C
+ATOM      4  CA  ALA B 155      11.400   0.000   0.000  1.00  0.00           C
+ATOM      5  CA  ALA C   1       0.000   0.000   5.000  1.00  0.00           C
+ATOM      6  CA  ALA C   4       3.000   3.000   5.000  1.00  0.00           C
+END

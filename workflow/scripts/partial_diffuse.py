@@ -54,6 +54,13 @@ DEFAULT_NOISE_SCALE_CA = 0
 _MOCK_BINDER_CHAIN = "D"
 _MOTIF_CHAINS = ("A", "B", "C")
 
+# Sub-run A aligned scaffolds carry the target as the BAKER-format truncated
+# motif: chain B = HLA[1:180], chain C = peptide[1:9] (align_baker_scaffolds).
+# These two lengths are static (fixed by the truncated target geometry); only
+# the chain-A binder length varies per scaffold and is derived per-design.
+_TRUNCATED_HLA_LEN = 180
+_TRUNCATED_PEPTIDE_LEN = 9
+
 
 def _motif_residues(reference_pdb: Path) -> dict[str, list]:  # type: ignore[type-arg]
     parser = PDBParser(QUIET=True)
@@ -110,6 +117,37 @@ def _synthesize_mock_design(out_pdb: Path, reference_pdb: Path, binder_length: i
     io.save(str(out_pdb))
 
 
+def _derive_contigs_subrun_a(aligned_scaffold_pdb: Path) -> str:
+    """Build the RFdiffusion contig string for one aligned sub-run A scaffold.
+
+    The aligned scaffold (align_baker_scaffolds output) is laid out chain
+    A = binder, B = HLA[1:180], C = peptide[1:9]. The binder length N is the
+    chain-A standard-residue CA count.
+
+    RFdiffusion requires ``contigmap.contigs`` in partial-diffusion mode too
+    (it is the residue mask, not an optional bias -- Trap #32). The binder
+    slot is a *bare* ``N-N`` range (unprefixed = redesigned), while ``B``/``C``
+    are letter-prefixed motifs (preserved). A letter on the binder slot would
+    tell RFdiffusion to preserve chain A, defeating partial diffusion. See
+    RFdiffusion README "Partial diffusion": e.g. ``[100-100/0 B1-150]``.
+    """
+    parser = PDBParser(QUIET=True)
+    structure: Structure = parser.get_structure(
+        aligned_scaffold_pdb.stem, str(aligned_scaffold_pdb)
+    )
+    model = structure[0]
+    if "A" in model:
+        n = sum(1 for r in model["A"].get_residues() if r.id[0].strip() == "" and "CA" in r)
+    else:
+        n = 0
+    if n == 0:
+        raise ValueError(
+            f"partial_diffuse: contigs not derivable from {aligned_scaffold_pdb} "
+            "— chain A empty or malformed"
+        )
+    return f"[{n}-{n}/0 B1-{_TRUNCATED_HLA_LEN}/0 C1-{_TRUNCATED_PEPTIDE_LEN}]"
+
+
 def partial_diffuse_one(
     input_pdb: Path,
     out_prefix: Path,
@@ -119,14 +157,29 @@ def partial_diffuse_one(
     noise_scale_ca: int,
     hydra_dir: Path,
 ) -> None:
-    """Run one RFdiffusion partial-diffusion design (real mode)."""
+    """Run one RFdiffusion partial-diffusion design (real mode).
+
+    Trap #33: RFdiffusion *always* appends ``_{design_startnum}`` to whatever
+    ``inference.output_prefix`` it is given. Passing the seed-embedded
+    ``out_prefix`` (``design_{seed}``) together with ``design_startnum={seed}``
+    therefore produced ``design_{seed}_{seed}.pdb`` (double suffix), invisible
+    to enumeration that globs ``design_{seed}.pdb``.
+
+    Fix: only ``out_prefix.parent`` is honored — the actual prefix base is
+    pinned to ``"design"`` and the seed comes solely from ``design_startnum``,
+    so RFdiffusion writes ``<out_prefix.parent>/design_{seed}.pdb``. The stem of
+    the caller's ``out_prefix`` is intentionally ignored to keep the writer's
+    output filename in lockstep with the single-suffix reader contract.
+    """
     rfdiffusion_python = _resolve_rfdiffusion_python()
     hydra_dir.mkdir(parents=True, exist_ok=True)
+    contig = _derive_contigs_subrun_a(input_pdb)
+    actual_prefix = out_prefix.parent / "design"
     cmd = [
         rfdiffusion_python,
         str(RFDIFFUSION_DIR / "scripts" / "run_inference.py"),
         f"inference.input_pdb={input_pdb}",
-        f"inference.output_prefix={out_prefix}",
+        f"inference.output_prefix={actual_prefix}",
         "inference.num_designs=1",
         f"inference.ckpt_override_path={ckpt}",
         f"diffuser.partial_T={partial_T}",
@@ -135,6 +188,7 @@ def partial_diffuse_one(
         "inference.deterministic=True",
         f"inference.design_startnum={seed}",
         f"hydra.run.dir={hydra_dir}",
+        f"contigmap.contigs={contig}",
     ]
     logger.info("RFdiffusion partial diffusion: %s", cmd)
     subprocess.run(cmd, check=True, env={**os.environ})

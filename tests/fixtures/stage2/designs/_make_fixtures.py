@@ -32,15 +32,18 @@ N_BACKBONES = 10
 N_SEQS_PER_BACKBONE = 4
 N_TOTAL_RECORDS = N_BACKBONES * N_SEQS_PER_BACKBONE  # 40
 
-# Boundary-test fixture: exactly 4 of 40 mock predictions pass iPAE<12 AND ipLDDT>88
-# -> observed = 0.10 exactly. This tests the halt rule uses >= (PASS at boundary),
-# not > (FAIL at boundary). Any refactor that computes `observed` differently
-# (e.g. integer arithmetic, percentage scaling) must preserve `observed == 0.10`
-# and the corresponding PASS verdict. Do not change pass count without updating
-# the halt-rule semantic test in tests/test_stage2_designs_halt_gate.py.
+# Boundary-test fixture: exactly 4 of 40 mock predictions pass the intermediate
+# cut (iPAE < halt_cut_ipae_max AND ipLDDT > halt_cut_iplddt_min from
+# configs/af2_stage2.yaml) -> observed = 0.10 exactly. This tests the halt rule
+# uses >= (PASS at boundary), not > (FAIL at boundary). Any refactor that
+# computes `observed` differently (e.g. integer arithmetic, percentage scaling)
+# must preserve `observed == 0.10` and the corresponding PASS verdict. Do not
+# change pass count without updating the halt-rule semantic test in
+# tests/test_stage2_designs_halt_gate.py. PASS_* are kept comfortably inside the
+# cycle-03 recalibrated gate (6.0 / 92.0); FAIL_* comfortably outside.
 N_PASSING = 4
-PASS_IPAE = 8.0
-PASS_IPLDDT = 90.0
+PASS_IPAE = 3.0
+PASS_IPLDDT = 95.0
 FAIL_IPAE = 18.0
 FAIL_IPLDDT = 60.0
 

@@ -77,14 +77,34 @@ def _resolve_inputs(
     repeated seed complex for B)."""
     if subrun == "a":
         scaffold_glob = MOCK_SCAFFOLD_GLOB if mock else (cfg.get("scaffolds") or {})["aligned_glob"]
+        # Real sub-run A uses BAKER's fused-chain library, aligned against the
+        # truncated reference (chain B = HLA, C = peptide) and rewritten to our
+        # A=binder / B=HLA / C=peptide layout. Mock keeps the lightweight
+        # toy-scaffold aligner + mock_clean.pdb so the cycle-99 DAG stays green.
         aligned = align_scaffolds.align_scaffolds(
-            str(scaffold_glob), reference_pdb, out_dir / "aligned"
+            str(scaffold_glob), reference_pdb, out_dir / "aligned", baker_layout=not mock
         )
         n = len(aligned) if mock else min(int(cfg["inference"]["num_designs"]), len(aligned))
         return aligned[:n]
     seed_pdb = MOCK_SEED_PDB if mock else Path(cfg["inference"]["input_pdb"])
     n = _MOCK_SUBRUN_B_DESIGNS if mock else int(cfg["inference"]["num_designs"])
     return [seed_pdb] * n
+
+
+def _fixed_chains_for_subrun(subrun: str, target: Any, mock: bool) -> frozenset[str]:
+    """Motif (non-binder) chains used to identify the binder by exclusion in
+    the geometry gate (_binder_ca_coords).
+
+    Real sub-run A designs are 3-chain BAKER-truncated complexes (A=binder,
+    B=HLA[1:180], C=peptide), so the binder shares chain letter A with the
+    full manifest's HC; excluding the full {A,B,C} set would leave no
+    candidate and crash scoring. The truncated motif is {B,C}, leaving chain
+    A as the unique binder. Sub-run B and every mock path keep the full
+    manifest's non-binder chains (binder synthesized on chain D).
+    """
+    if subrun == "a" and not mock:
+        return frozenset({"B", "C"})
+    return frozenset(cid for cid, chain in target.chains.items() if chain.role != "binder")
 
 
 def run(
@@ -110,7 +130,7 @@ def run(
     cleaned_pdb = Path(target.cleaned_pdb)
     hotspot_tokens = _hotspot_tokens(target)
     hotspot_xyz = _hotspot_ca_xyz(target, cleaned_pdb)
-    fixed_chains = frozenset(cid for cid, chain in target.chains.items() if chain.role != "binder")
+    fixed_chains = _fixed_chains_for_subrun(subrun, target, mock)
     length_range = (target.binder.length_min, target.binder.length_max)
 
     designs_dir = out_dir / "designs"

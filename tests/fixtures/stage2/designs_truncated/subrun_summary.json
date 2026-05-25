@@ -1,0 +1,22 @@
+{
+  "cycle": 99,
+  "fraction_geometry_pass": 1.0,
+  "length_dist": {
+    "max": 6,
+    "mean": 5.0,
+    "min": 4
+  },
+  "mock": true,
+  "n_attempted": 3,
+  "n_completed": 3,
+  "n_geometry_pass": 3,
+  "partial_T": 15,
+  "rfdiffusion_git_sha": "mock",
+  "seed_offset": 0,
+  "subrun": "a",
+  "target_id": "wt1_a0201",
+  "wall_minutes_total": 0.01,
+  "weights_sha256": {
+    "mock_ckpt.pt": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

@@ -96,6 +96,41 @@ from de-novo RFdiffusion to **partial diffusion** from two seeded sub-runs.
 - **Deferred to cycle 04**: the ProteinMPNN peptide-context specificity
   (`mpnn_spec_filter`) filter — see `specs/stage3_spec_filter.md`.
 
+## Cycle 03 BAKER truncation (sub-run A prep)
+
+- **Why**: BAKER scaffolds carry the target as a fused chain B = HLA[1:180] +
+  peptide (binder on A). Aligning that onto `3hpj_clean.pdb` (chain B = β2m)
+  silently superposes HLA onto β2m → garbage geometry, ~6 h A100 wasted
+  (Trap #31). Sub-run A needs a target whose chain layout matches BAKER's
+  groove-only fragment.
+- **Truncated target**: `prep_baker_target.py` →
+  `data/targets/3hpj_baker_truncated.pdb` (chain B = HLA α1+α2 res 1-180,
+  chain C = peptide 1-9; β2m and α3 dropped; CA counts 180 B / 9 C). Built by
+  `rule prep_baker_target` (mock copies the fixture) and pod-side by
+  `setup_cycle03_inputs.py`. **Sub-run B keeps the full target** (`design_2079`
+  was AF2-validated against 4-chain `3hpj_clean.pdb`).
+- **Alignment**: `align_baker_scaffolds.py` superposes the scaffold's chain-B
+  HLA substring onto the truncated reference and rewrites to our
+  `A=binder / B=HLA / C=peptide` layout; `align_scaffolds(..., baker_layout=True)`
+  dispatches to it. `rule stage1_subrun_a` passes the truncated target as the
+  align `--reference-pdb`; the geometry/motif reference stays the full manifest.
+  The mock DAG keeps the lightweight aligner + `mock_clean.pdb`, so cycle 99/01
+  stay green.
+- **Controls recalibration**: `run_controls.py --target {full,truncated}`. The
+  truncated baseline folds binders against the β2m-free groove
+  (`HLA : peptide : binder` FASTA → 3-chain A=HLA, B=peptide, C=binder) and
+  writes `results/cycle_NN/controls_truncated_baseline/metrics_truncated_baseline.json`.
+  Launch gate (enforced when run on pod): P1 truncated iPAE within 1.0 Å of
+  cycle-01 P1 (4.5 ± 1.0) and N1 truncated iPAE > 15, else ABORT sub-run A.
+- **Metrics adapter**: `compute_metrics.LAYOUT_CHAINS[target_layout]` selects
+  binder/peptide/MHC chains (full: D / (C) / (A,B); truncated: C / (B) / (A)),
+  threaded through `metrics_for_design` / `metrics_for_control` and
+  `run_stage2._compute_metrics_for_predictions`. Default `full` → no behavior
+  change for existing callers.
+- **Verification**: `prep_baker_target` mock + 180/9 unit tests; align mock
+  layout test; `snakemake --dry-run cycle=03` and `cycle=99` e2e green; cycle
+  01/02 legacy green; ruff/black/mypy/pytest all pass.
+
 ## Pointers
 
 - `CLAUDE.md` — rulebook, locked decisions, controls panel summary.
