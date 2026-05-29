@@ -241,6 +241,13 @@ The repo bootstraps on a RunPod A100 pod via `bootstrap.sh` (two Python environm
 [10] Bennett, N.R., et al. Atomically accurate de novo design of antibodies with RFdiffusion. *Nature* (2025). DOI: [10.1038/s41586-025-09721-5](https://doi.org/10.1038/s41586-025-09721-5).
 
 ---
+**Committed data and code:** the cross-cycle funnel
+[results/master_design_journey.csv](../results/master_design_journey.csv); the cycle-03
+artifacts in [results/cycle_03/analysis/](../results/cycle_03/analysis/) (candidate
+dossier, scaffold lineage, the validated design_3010 structure); and the per-residue
+contact analyses [12_design3010_peptide_contacts.py](../analysis/scripts/12_design3010_peptide_contacts.py)
+and [13_design2079_peptide_contacts.py](../analysis/scripts/13_design2079_peptide_contacts.py).
+
 
 ## TL;DR for the application
 
