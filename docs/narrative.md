@@ -1,32 +1,24 @@
 # De novo pMHC-I minibinder design pipeline: scientific narrative
 
-
 ---
 
 ## Executive summary
 
-This pipeline is a calibrated three-tier funnel for designing small (~70 to 110 aa) de novo proteins that specifically recognize a peptide-MHC class I complex on cancer cells.
+This is a calibrated, reproducible funnel for designing small (~70–110 aa) de novo proteins that recognize a peptide-MHC class I complex — and, more consequentially, a **peptide-resolved interface metric** that measures whether a design reads the disease-defining peptide or merely the conserved MHC framework around it.
 
-1. Calibration. Published positive and negative control binders run through the structural prediction pipeline establish that the metrics actually distinguish real binders from non-binders for this target system, with a ~20 Å iPAE gap and a ~60-point ipLDDT gap.
-2. Sensitivity. RFdiffusion generates de novo backbones; ProteinMPNN designs sequences; AF2-multimer folds the complex and reports interface confidence metrics. Surviving designs are those AF2 trusts will form tight complexes.
-3. Specificity. Surviving designs are tested against an off-target panel of self-peptides presented on the same HLA allele. Designs that retain affinity for the cognate while showing reduced engagement with off-targets are kept.
+Across two structurally distinct design campaigns, that metric showed three things. First, the standard AF2 interface-confidence funnel is blind to the peptide-versus-framework distinction: designs that score in the positive-control band can be making zero contact with the peptide. Second, applied retroactively, the metric reclassified this project's own cycle-02 "hero" (design_2079_seq00) as a peptide-blind framework binder — its closest residue sits 28–40 Å from the peptide. Third, across 288 cycle-03 designs it surfaced a single design (design_3010_seq00) that contacts the WT1 peptide's specificity-bearing residues (N5, Y8) in the control-grade band, with one binder residue (R55) reading both.
 
-The architecture mirrors the platforms from Johansen et al. [1] and Liu et al. [2], two co-submitted *Science* 2025 papers on de novo pMHC-I minibinder design, with explicit reproducibility safeguards and trap-tracking discipline.
+This is a negative-result-rich pilot, and it is reported as one. Its value is methodological: the calibrated funnel, the metric audit that found two incompatible iPAE definitions across cycles, the peptide-contact decomposition that brings specificity information forward into the structure-prediction stage, an honest diagnosis of the limiting failure mode (framework bias is structural, not compositional — a charge hypothesis was raised and falsified), and a literature-anchored plan to fix it at scale. The architecture mirrors the platforms from Johansen et al. [1] and Liu et al. [2]. **All results in this writeup are in silico predictions; no experimental validation has been performed.**
 
 ---
 
 ## 1. Clinical motivation
 
-The immune system normally surveils cells by reading peptides displayed on MHC class I (the cell's intracellular protein "library card"). Tumor cells display peptides derived from oncogenic drivers or neoantigens this way. The natural recognition machinery (T-cell receptors, TCRs) is hard to isolate, often low-affinity, and difficult to manufacture at therapeutic scale.
+The immune system surveils cells by reading peptides displayed on MHC class I — the cell's intracellular "library card." Tumor cells display peptides derived from oncogenic drivers and neoantigens this way. The natural recognition machinery (T-cell receptors) is hard to isolate, often low-affinity, and difficult to manufacture at scale.
 
-De novo designed minibinders for pMHC-I complexes solve several problems at once:
+De novo minibinders for pMHC-I complexes address several problems at once: they access intracellular antigens via the surface-presented peptide, which conventional antibodies cannot target; they are small, stable, and cheap to produce; and they can be built into chimeric antigen receptor (CAR) constructs to redirect T-cell killing — the "BIKE" concept set out in Johansen et al. [1]. A single computational pipeline can, in principle, address arbitrary tumor antigens. The broader clinical case across CAR-T, T-cell engagers, and autoimmune indications is laid out in Hadrup [3].
 
-- They access intracellular antigens via the surface-presented peptide, which conventional antibodies cannot target.
-- They are small, stable, and can be produced in *E. coli* at low cost.
-- They can be incorporated into chimeric antigen receptor (CAR) constructs to redirect T-cell killing. The "BIKE" concept (de novo pMHC-Binders for Immune-mediated Killing Engagers) is set out in Johansen et al. [1].
-- A single computational pipeline can address arbitrary tumor antigens, generalizable across patients and cancers in principle. The broader clinical case for AI-designed minibinders across CAR-T, T-cell engager, and autoimmune indications is laid out in Hadrup [3].
-
-The bottleneck is **specificity**: the binder must recognize the cancer peptide but not closely related self-peptides presented on the same HLA on healthy cells. That is the hard problem this pipeline is built to address.
+The bottleneck is **specificity**: the binder must recognize the cancer peptide but not closely related self-peptides presented on the same HLA on healthy cells. Because the MHC framework is conserved and the peptide occupies a small, partly buried patch, the dominant failure mode is a binder that engages the framework and ignores the peptide. That is the hard problem this pipeline is built to make measurable.
 
 ---
 
@@ -37,297 +29,196 @@ The cognate complex is **WT1 RMFPNAPYL / HLA-A\*02:01**, crystal structure PDB 3
 | Component | Value | Rationale |
 |---|---|---|
 | Antigen | WT1 (Wilms Tumor 1) | Overexpressed in AML and multiple solid tumors; well-established TAA |
-| Peptide | RMFPNAPYL (residues 126-134) | Top-tier cancer immunotherapy target |
-| HLA allele | HLA-A\*02:01 | Most common allele in the Caucasian population (~50%); broadest patient applicability |
+| Peptide | RMFPNAPYL (residues 126–134) | Top-tier cancer immunotherapy target |
+| HLA allele | HLA-A\*02:01 | Most common allele in the Caucasian population (~50%); broadest applicability |
 | Structure | PDB 3HPJ | Published crystal complex; clean starting point |
 
-Liu et al. [2] targeted this exact complex in their *Science* 2025 paper. That gives the project a direct experimental literature anchor: their published binders become this pipeline's positive controls; their results become the benchmark.
+Liu et al. [2] targeted this exact complex, giving the project a direct experimental literature anchor: their published binders become positive controls; their results become the benchmark.
 
 ---
 
-## 3. Pipeline architecture overview
+## 3. Pipeline architecture
 
-Three sequential validation tiers:
+Three sequential tiers — calibration, sensitivity, specificity — implemented as a Snakemake DAG with per-stage halt gates and mock-mode CI.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                                                                          │
-│  TIER 1: CALIBRATION                                                     │
-│  (cycle 1) published controls through the pipeline                       │
-│                                                                          │
-│  Question: do the metrics actually distinguish binders from non-binders? │
-│  Answer:   YES (positives 4.5-4.9 Å iPAE, negatives 24-26 Å)             │
-│                                                                          │
-└───────────────────────────────────┬──────────────────────────────────────┘
-                                    │
-┌───────────────────────────────────▼──────────────────────────────────────┐
-│                                                                          │
-│  TIER 2: SENSITIVITY                                                     │
-│  (cycle 02) Stages 0-2: de novo design through the calibrated assay      │
-│                                                                          │
-│  Stage 0  → target preparation (3HPJ cleanup)                            │
-│  Stage 1  → RFdiffusion: 200 de novo binder backbones                    │
-│  Stage 2  → ProteinMPNN (4 seqs/backbone) → top to AF2-multimer          │
-│             → iPAE, ipLDDT, BSA per prediction                           │
-│             → halt gate: ≥10% pass iPAE<12 AND ipLDDT>88                 │
-│                                                                          │
-│  Cycle 02 (naive priors): 200 → 26 → 50 → 1 hero design                  │
-│  Cycle 03 target (with interventions): 10-25% strict-cut yield           │
-│                                                                          │
-└───────────────────────────────────┬──────────────────────────────────────┘
-                                    │
-┌───────────────────────────────────▼──────────────────────────────────────┐
-│                                                                          │
-│  TIER 3: SPECIFICITY (planned, cycle 04+)                                │
-│                                                                          │
-│  Stage 3a → sequence-based off-target panel (Hamming + presentation)     │
-│  Stage 3b → AF2 cross-panning of survivors × off-target panel            │
-│                                                                          │
-│  Output: subset of survivors with low predicted cross-reactivity         │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
+TIER 1  CALIBRATION   published controls through the assay, matched to target geometry
+                      Q: do the metrics distinguish binders from non-binders?  A: yes
+        ─────────────────────────────────────────────────────────────────────────────
+TIER 2  SENSITIVITY   Stage 0 target prep → Stage 1 RFdiffusion backbones
+                      → Stage 2 ProteinMPNN sequences → AF2-multimer fold + interface metrics
+                      Cycle 02 (de novo) and Cycle 03 (BAKER-scaffold partial diffusion)
+                      + the peptide-resolved iface_pep decomposition (this work)
+        ─────────────────────────────────────────────────────────────────────────────
+TIER 3  SPECIFICITY   AF2 cross-pan of survivors × off-target panel + Hamming proteome scan
+                      (planned, cycle 04+)
 ```
 
+The contribution of this work sits inside Tier 2: a decomposition of the AF2 interface metric into peptide and framework components, which pulls a specificity signal forward from Tier 3 into the per-design fold itself.
+
 ---
 
-## 4. Stage 0: target preparation
+## 4. Tier 1: calibration via regime-matched controls
 
-The cleaned target complex contains three chains:
+Before generating designs, the pipeline is run on published reference binders. AF2 confidence is not absolute — an iPAE of 8 Å is meaningless without empirical anchors. Two control sets were run, each **matched to the target geometry of the cycle it calibrates**:
 
-| Chain | Identity | Length |
+- **Cycle-1 controls** (`results/cycle_01/stage2/metrics.json`) — full four-chain target (HLA heavy + β2m + peptide + binder), with TCR-sized published controls. Calibrates the cycle-02 de novo pipeline.
+- **Cycle-3 truncated-baseline controls** — three-chain truncated target (HLA α1/α2 groove + peptide + binder), matching the BAKER-scaffold cycle-03 geometry.
+
+| Control | Identity | What it rules out |
 |---|---|---|
-| A | HLA-A\*02:01 heavy chain | ~275 aa |
-| B | β2-microglobulin | ~100 aa |
-| C | RMFPNAPYL peptide | 9 aa |
+| P1 | Baker lab WT1 binder [2], cognate target | Thresholds too tight (a real positive must pass) |
+| P2 | Jenkins NY1-B04 binder [1], cognate NY-ESO-1 | Calibration is WT1-only |
+| P3 | Baker WT1 binder on the *wrong* target (MART-1) | Pipeline rewards generic foldedness |
+| N1 | Scrambled Baker WT1 sequence, same backbone | Metrics are backbone-dominated / sequence-blind |
+| N2 | Random 85-aa sequence | AF2 reports false-positive interfaces for anything |
 
-Stage 0 strips waters, ligands, and non-essential residues from 3HPJ, validates chain numbering, and emits a target manifest consumed by every downstream stage. This is the source-of-truth structure for everything that follows.
+**Cycle-1 (full target).** Positives P1/P2/P3 at iPAE 4.54–4.88 Å, ipLDDT 94–96; negatives N1/N2 at 24.7–25.7 Å, ipLDDT 31–35. Clean ~20 Å iPAE and ~60-point ipLDDT separation; ipLDDT is the sharper signal.
+
+**Cycle-3 (truncated target), interface-8 Å decomposition.** Positives `iface_tot` 1.27–1.71 / `iface_pep` 1.46–2.60 / ipLDDT 93–97; negatives `iface_tot` 12.7–13.4 / `iface_pep` inf / ipLDDT 58–63.
+
+Two points matter for everything downstream:
+
+1. **The two control sets are not numerically comparable** (4.5–4.9 full-target vs 1.27–1.71 truncated). They calibrate different geometries. Cross-cycle magnitude comparisons of iPAE between a full-target design (cycle 02) and a truncated-target design (cycle 03) are therefore confounded by the target change, independent of any design improvement.
+2. **The P3 result is the empirical justification for Tier 3.** P3 (Baker WT1 binder on MART-1) is a deliberate specificity failure. On overall metrics it scores like a true positive — the documented AF2 specificity blind spot, quantified by Mares et al. [5] at AUROC 0.06–0.22 for sequence predictors on structurally valid peptides. But in the interface-8 Å *decomposition*, P3's `iface_pep` degrades (2.60 vs P1's 1.70) while its `iface_mhc` stays intact (1.42). The peptide channel carries specificity information the aggregate metric hides. This observation motivates the metric used throughout (§7).
 
 ---
 
-## 5. Tier 1: pipeline calibration via controls (cycle 1)
+## 5. The metric audit
 
-Before generating any de novo designs, the pipeline was run on five published reference binders. The question this answers: do the metrics actually distinguish real binders from non-binders for our target system?
+The two cycles stored their interface metrics under **different operational definitions of iPAE**, a discrepancy found and resolved during analysis (validated dataset-wide; recomputation matched stored values to Δ = 0.0000):
 
-### Why calibration was necessary
-
-AF2 confidence metrics are not absolute. An iPAE of 8 Å is meaningless in isolation. Without empirical anchors, every downstream result is uninterpretable:
-
-| Hypothetical result | Without calibration | With calibration |
+| | Cycle 02 (`metrics.jsonl`) | Cycle 03 (`manual_metrics`) |
 |---|---|---|
-| de novo design at iPAE 6.5 Å | "Is this good? Is this noise?" | "Comparable to published binders (4.5 to 4.9 Å); behaves like a real binder" |
-| de novo design at iPAE 11 Å | "Marginal. Is the threshold even right?" | "Far from positives, closer to negatives (24 to 26 Å); likely noise" |
+| iPAE | **interface-8 Å**: mean `min(PAE_ij, PAE_ji)` over binder↔target pairs within 8 Å heavy-atom distance (Johansen et al. [1], Fig. 1B) | **position-slice**: mean PAE over *all* binder↔target pairs, no distance filter (Bennett-style `pae_interaction`) |
+| ipLDDT | interface-contact-residue mean | binder-chain mean |
+| Comparable across cycles? | only **ipTM** is directly comparable as stored | |
 
-### The control panel
-
-| ID | Identity | Purpose |
-|---|---|---|
-| P1 | Baker lab WT1 binder [2], cognate target | Confirms a real positive passes (rules out thresholds too tight) |
-| P2 | Jenkins NY1-B04 binder [1], cognate target (NY-ESO-1) | Confirms calibration generalizes across pMHC systems |
-| P3 | Baker WT1 binder on the *wrong* target (MART-1) | Specificity check (rules out: pipeline rewards generic foldedness) |
-| N1 | Scrambled Baker WT1 sequence, same backbone | Rules out: metrics are backbone-dominated and sequence-blind |
-| N2 | Random 85-aa sequence | Rules out: AF2 always reports false-positive interface metrics |
-
-### What each control rules out, and what the cycle 1 data showed
-
-| Failure mode the control rules out | Result |
-|---|---|
-| Pipeline reports bad metrics for everything | P1 at iPAE 4.88 Å, ipLDDT 94.5. Real positive passes. |
-| Calibration only works for WT1 | P2 (Jenkins NY1-B04 vs NY-ESO-1) at 4.56 Å, 95.9. Generalizes across pMHCs. |
-| Pipeline rewards generic foldedness regardless of target | P3 (WT1 binder on MART-1) at 4.54 Å, 94.2. See note below. |
-| Metrics are backbone-dominated, sequence-blind | N1 (scrambled, same backbone as P1) at 24.7 Å, 34.5. Sequence-driven. |
-| AF2 always reports good interface metrics for anything | N2 (random 85-mer) at 25.7 Å, 31.4. AF2 reports garbage as garbage. |
-
-### Cycle 1 results
-
-| Control | iPAE (Å) | ipLDDT | BSA (Å²) |
-|---|---|---|---|
-| P1 | 4.88 | 94.5 | 2692 |
-| P2 | 4.56 | 95.9 | 2788 |
-| P3 | 4.54 | 94.2 | 2698 |
-| N1 | 24.72 | 34.5 | 1524 |
-| N2 | 25.70 | 31.4 | 2153 |
-
-The discrimination between positives (4.5 to 4.9 Å iPAE, 94 to 96 ipLDDT) and negatives (24.7 to 25.7 Å, 31 to 35) is clean. The iPAE gap is ~20 Å and the ipLDDT gap is ~60 points. The ipLDDT separation is sharper than the iPAE separation and is the more discriminating signal in this calibration.
-
-A BSA caveat. The cycle 1 positive controls are full-length TCRs with BSA ~2700 Å². De novo minibinders are smaller and contact a smaller patch of the pMHC; Liu et al. [2] report minibinder BSAs in the 800 to 1200 Å² range. The iPAE comparison across cycle 1 controls and de novo designs is valid (iPAE is a normalized AF2 confidence score), but BSA should be read against the Baker minibinder range, not against the cycle 1 TCR controls.
-
-The P3 result needs unpacking. P3 is the Baker WT1 binder folded against MART-1 ELAGIGILTV on the same HLA-A\*02:01. If AF2 iPAE were a complete specificity readout, P3 should have scored substantially worse than P1. Instead it scored on par. This is the documented AF2 specificity blind spot. Householder et al. [4] address it with a proteome-wide Hamming scan; Liu et al. [2] address it with yeast display experimental validation; Mares et al. [5] quantified it at AUROC 0.06 to 0.22 for sequence-based predictors on structurally valid peptides. The cycle 1 calibration reproduced the literature concern in our own hands. Stage 3 (in silico cross-panning plus Hamming proteome scan) is the answer, and this P3 result is the empirical justification for it.
-
-A side note on the cycle 1 halt rule. The initial halt rule required P1 to rank first or second of five by iPAE. That rule failed: P1 ranked third behind P3 (4.54) and P2 (4.56), separated by ~0.3 Å from both. The rule was poorly chosen. A controls panel doesn't fail because of an unexpected ordering between two positives at essentially identical scores. It fails when discrimination between positives and negatives breaks down. The rule was replaced with three component criteria: P1 below threshold, P2 within published calibration, clean positive/negative separation. All three pass. Logged in the trap book.
+Both definitions are published and legitimate. Interface-8 Å is the better ranking metric for this system — it is size-robust (binder lengths span 54–118 aa) and is what the Hadrup/Jenkins platform reports [1]; the position-slice is the Bennett field default and is retained for baseline comparability. All candidate rankings in this writeup use the recomputed interface-8 Å definition consistently across both cycles. The slice/interface mismatch is also why the originally slice-ranked cycle-03 top list (§7) reordered substantially once recomputed.
 
 ---
 
-## 6. Tier 2, Stage 1: RFdiffusion (cycle 02)
+## 6. Tier 2, Cycle 02: de novo generation and the reclassified hero
 
-With the assay calibrated, the pipeline moves to de novo generation.
-
-Inputs for cycle 02: cleaned 3HPJ as the target (chains A, B, C for HLA heavy, β2m, peptide). Eight hotspots: C1, C4, C6, C8 (four outward-facing peptide residues) plus A65, A66, A150, A155 (four flanking HLA residues). The peptide-heavy bias follows Liu et al. [2]; binders that contact mostly the peptide are inherently more peptide-specific. Binder length range 70 to 110 residues. 200 backbones requested. Recenter radius 10 Å. 50 noise steps.
-
-Output: 200 protein backbones (CA coordinates only, no sequence yet) that geometrically arc above the peptide groove. This stage is a pipeline-health metric, not a quality filter. It answers whether RFdiffusion can produce backbones that approach the cleft at all and whether they cluster into recognizable topologies.
-
-### Cycle 02 Stage 1 results
-
-Running on a single A100 SXM 80GB took ~1 hour of wall time. All 200 designs completed and wrote 4-chain PDBs (A=275 aa, B=100 aa, C=9 aa, D=70 to 110 aa). Motif RMSD landed at ~0.12 Å across all 200 designs, well inside geometric tolerance. The binder length distribution sat cleanly inside the 70 to 110 contig (median 89).
-
-The geometry quality gate passed 26 of 200 designs (13%). Of the 174 failures:
-
-- 173 of 174 (99%) failed on insufficient hotspot contacts.
-- 4 of 174 failed on internal CA clash.
-- 131 of 200 designs (66%) had literally zero CA atoms within contact distance of any hotspot residue.
-
-The diagnosis: the binders are at reasonable lengths with valid backbones, but they're landing on the wrong face of HLA. With only 8 hotspots and the default 10 Å recenter radius, the spatial prior on this design isn't strong enough to constrain placement to the groove. Many failures dock against the α3 domain (the larger non-groove surface that contacts β2m), not the peptide-binding cleft.
-
-This is a placement deficit, not a backbone-quality deficit. The 13% yield is at the upper end of what Liu et al. [2] report for cycle-zero unconstrained runs before they apply peptide-centric arcing and densified hotspots (10 to 15 residues), at which point their yields move into the 20 to 35% range across four HLA alleles. The cycle 02 result is therefore predicted and accepted: it's the calibration baseline against which the cycle 03 interventions will be measured.
-
-Four engineering incidents were identified during this cycle, all caught by the pipeline's own HALT gates. See §11 (engineering rigor) for the writer/reader contract drift class and how each was diagnosed and pinned.
-
----
-
-## 7. Tier 2, Stage 2: ProteinMPNN plus AF2-multimer (cycle 02)
-
-The 26 geometry-passing backbones from Stage 1 enter Stage 2 for sequence design and forward folding.
-
-### ProteinMPNN
-
-ProteinMPNN takes each backbone and produces sequences predicted to fold into it while making good contacts with the fixed pMHC target.
-
-Configuration: chains A, B, C fixed at native target sequence; chain D designed; 4 sequences per backbone (104 candidates for cycle 02); sampling temperature 0.1 for high confidence and low diversity. Output ranking by `mpnn_global_score` (NLL-like, lower is better). The top 50 by score proceed to AF2-multimer.
-
-### AF2-multimer (ColabFold)
-
-Each ranked sequence is folded as a four-chain complex (HLA heavy plus β2m plus peptide plus binder). Configuration: `num_recycles=3` for triage (cycle 03 will promote top hits to 6 for sharper metrics), 5 models per prediction, no AMBER relax (Baker convention; saves wall time). Inputs colon-separated as a multimer FASTA. MSA is queried per design against the ColabFold server, which dominates wall time.
-
-### Metrics and halt gate
-
-Three metrics per fold:
-
-| Metric | Definition | Intermediate cut | Tight cut (informational) |
-|---|---|---|---|
-| iPAE | mean `min(pae_ij, pae_ji)` over binder↔target residue pairs within 8 Å heavy-atom distance | < 12 Å | < 7 Å |
-| ipLDDT | mean pLDDT over residues participating in any interface contact | > 88 | > 92 |
-| BSA | Å² of interface buried | informational | informational |
-
-The interface restriction matters. Cycle 02 confirmed that global pLDDT and global ipTM are misleading for this system: several designs scored global pLDDT > 91 and ipTM > 0.74 yet failed the iPAE/ipLDDT cuts entirely. The binders fold well as isolated 4-helix bundles but don't contact the peptide groove with confidence. Global pLDDT is dominated by the rigid HLA scaffold (275 aa, well-represented in AF2's training data); ipTM is biased upward by the static A↔B↔C complex interfaces. Interface-restricted iPAE/ipLDDT correctly identify which designs actually engage the binding cleft. This is consistent with Johansen et al. [1], who report iPAE as the strongest single AF2-derived predictor of experimental binding for pMHC binders.
-
-Pipeline-health halt gate: at least 10% of folded designs must pass the intermediate cut (iPAE < 12 AND ipLDDT > 88). Below 10% means something upstream is wrong (hotspots, MPNN config, splicing). At or above 10% means the pipeline is functioning and survivors can proceed to the specificity tier. The threshold is loose by design for cycle 02; cycle 03 raises it to 0.20 as a production criterion.
-
-### Cycle 02 Stage 2 results
-
-The funnel narrowed from 26 geometry-passing backbones to 1 strict-cut-passing design:
+Cycle 02 ran the full four-chain target end to end with de novo RFdiffusion backbones, no ProteinMPNN amino-acid bias, and `num_recycles=3`. Full detail in [cycle_02.md](cycle_02.md).
 
 | Stage | Input | Output | Yield |
 |---|---|---|---|
-| ProteinMPNN sequence design | 26 backbones × 4 seqs | 104 sequences | 4/backbone |
-| MPNN NLL ranking, fan-in | 104 sequences | Top 50 | 50/104 |
-| AF2-multimer folding | 50 sequences × 5 models | 50 ranked predictions | 50/50 |
-| Strict cuts (iPAE ≤ 12 AND ipLDDT ≥ 88) | 50 folded | **1 passing design** | **2%** |
+| RFdiffusion backbones | — | 200 | — |
+| Geometry pass | 200 | 26 | 13% |
+| ProteinMPNN (4 seqs/backbone) | 26 | 104 | — |
+| AF2-multimer fold (top 50) | 50 | 50 | — |
+| Strict cut (iPAE ≤ 12 **and** ipLDDT ≥ 88) | 50 | **1** | **2%** |
 
-Verdict: HALT at fraction_pass_intermediate = 0.02 below the 0.10 threshold. Wall time ~6 hours including the initial ColabFold MSA server queue.
+The interface-8 Å distribution is informative: median 22.66 Å, ~70% of designs (35/50) in the 20–25 Å range (the cycle-1 negative zone), min 6.41 Å (the single passing design). AF2 reads most designs as coherent four-helix bundles that simply do not contact the binding cleft with confidence — the placement deficit propagating from Stage 1, which ProteinMPNN cannot repair.
 
-The full Stage 2 iPAE distribution is informative. Median 22.66 Å. 70% of designs (35 of 50) sit in the 20 to 25 Å range, same as cycle 1 negatives. Min 6.41 Å (the one passing design). Max 26.17 Å.
+**The hero, reclassified.** design_2079_seq00 (99 aa, four-helix bundle, BSA 976 Å² in the Liu et al. [2] minibinder range) crossed the strict cuts at iPAE 6.41 Å / ipLDDT 91.1, and the original narrative reported it as a positive-band win. The peptide-contact decomposition (§7) overturns that reading:
 
-```
-iPAE distribution across 50 AF2-folded designs (5 Å bins):
-
-[ 5-10 Å]  █                                    (1)   ← hero, positive-control zone
-[10-15 Å]  █                                    (1)
-[15-20 Å]  ██████████                          (10)
-[20-25 Å]  ███████████████████████████████████ (35)   ← negative-control zone
-[25-30 Å]  ███                                  (3)   ← worse than negatives
-```
-
-AF2 is reading most of these as docked-but-wrong-face structures, not as random failures. The binders are coherent objects, they just aren't contacting the peptide groove with confidence. This is the direct downstream readout of the Stage 1 placement deficit: ProteinMPNN cannot repair a backbone that's docked against α3 or β2m. The placement problem propagates intact.
-
-### The hero design
-
-A single design crossed the strict cuts:
-
-| Property | Value | Reference |
+| Metric | Value | Reading |
 |---|---|---|
-| ID | design_2079_seq00 | |
-| Length | 99 aa | Within the 70 to 110 contig |
-| Topology | 4-helix bundle | Consistent with the α-helical TCR-mimic class in Householder et al. [4] |
-| iPAE | **6.41 Å** | 1.5 Å above the cycle 1 positive band ceiling (4.88 Å), 18.3 Å below the negative floor (24.72 Å). Statistically in the positive zone. |
-| ipLDDT | 91.07 | 3 units above the strict cut of 88. |
-| BSA | 976 Å² | Within the Liu et al. [2] minibinder range of 800 to 1200 Å². |
+| `iface_tot` | 6.41 | Above the cycle-1 full-target positive band (4.5–4.9) — a weak interface even in aggregate |
+| `iface_pep` | **inf** | **No binder atom within 8 Å of any peptide atom** |
+| `iface_mhc` | 6.41 | The entire interface is MHC framework |
+| closest binder→peptide distance | **28–40 Å** | The binder docks on a distal MHC surface, nowhere near the groove |
 
-Two qualifications matter for cycle 03 design decisions.
-
-**Backbone 2079 is a sequence-design lottery win, not a robust scaffold.** The four ProteinMPNN sequences on this backbone scored iPAE 6.41 (passing), 19.26, 24.11, and 24.93. A robust scaffold would produce a tight cluster of passing sequences because the backbone geometry, not the sequence, determines docking. Here three of four sequences on the same backbone produce poor interfaces, and only one happens to find a configuration AF2 reads as binder-like. ProteinMPNN sampled enough sequence space to land on a working solution; the backbone permits binding but doesn't enforce it. Backbones 2179 and 2100 produced 4/4 globally well-folded designs (high global pLDDT) but 0/4 passing iPAE, meaning they fold beautifully as bundles but don't touch the peptide. The takeaway for cycle 03 is to sample more sequences per backbone, treating each backbone as a candidate that needs multiple lottery tickets to confirm viability.
-
-**The hero sequence is 40.4% alanine.** This is the textbook unconstrained ProteinMPNN regularizer trap. Alanine has the highest helix propensity of the 20 canonical residues, and ProteinMPNN's default sampling leans heavily on it. The full hero sequence is:
-
-```
-AAAEKAKEAAKKFKEAAKIAAEKGAEAGIKAIREIGKELLAAAATPAMEALGKAALAAAAAIAAELAAFPERAAEITKRTVAAAKELAKAAEEVAKALK
-```
-
-Composition: A 40%, K 15%, E 14%, L 7%, I 6%, G 4%, R 3%, T 3%, F/P/V 2% each, M 1%. Zero W, Y, C, H, N, Q, S, D. AF2 doesn't penalize this; the structural confidence is in the positive zone. But the experimental tractability is hurt: low-complexity sequences have elevated aggregation risk in *E. coli* expression and yeast display, and the absence of W and Y means no UV/A280 quantitation handle and no native fluorescence for binding assays. Both Liu et al. [2] and Householder et al. [4] explicitly apply a negative alanine bias during ProteinMPNN sampling for exactly this reason. Cycle 02 did not.
-
-The Ala-rich composition is therefore AF2-orthogonal but wet-lab-consequential. The design isn't invalidated, but it would not be the candidate to take to synthesis without re-sampling sequences with proper bias.
+design_2079 is a peptide-blind MHC-framework binder. Its 6.41 was entirely framework contact; the aggregate metric never revealed that the peptide — the entire point of the target — was 28–40 Å away. Two further qualifications from the original analysis stand: the backbone is a sequence-design lottery (its four ProteinMPNN sequences scored 6.41 / 19.26 / 24.11 / 24.93 — only one finds a binder-like configuration), and the sequence is 40.4% alanine (the unconstrained ProteinMPNN regularizer trap; AF2-orthogonal but wet-lab-consequential, with no W/Y for UV quantitation). The alanine issue was fixed in cycle 03; the peptide-blindness was not, because it is upstream of sequence design.
 
 ---
 
-## 8. Cycle 03 plan
+## 7. The peptide-resolved interface metric
 
-Cycle 02 surfaced three orthogonal failure modes, each with a literature-anchored fix. The cycle 03 plan is to apply all three together and tighten the halt gate.
+The standard de novo binder funnel ranks on ipTM and an aggregate interface iPAE. For a generic protein target that is sufficient. For pMHC it is not: the target surface is mostly conserved framework with a small variable peptide patch, and a binder can satisfy every aggregate metric while contacting only the framework — exactly the cycle-02 hero, and (§8) most of cycle 03.
 
-**Intervention 1: densify hotspots and apply peptide-centric arcing (Stage 1).** From 8 hotspots to 12 to 15 hotspots, with peptide-centric arcing replacing radial recentering so the peptide acts as the primary trajectory anchor for the diffused chain. Source: Liu et al. [2] supplementary methods. Targeted effect: Stage 1 geometry pass rate from 13% to 25 to 35%; zero-hotspot-contact designs from 65.5% to below 20%. Risk: over-constraint could collapse design diversity. Mitigation: verify backbone topology distribution remains broad in cycle 03 Stage 1 logs.
+The fix is to decompose the interface-8 Å iPAE by target sub-chain:
 
-**Intervention 2: alanine bias on ProteinMPNN (Stage 2 sequence design).** Apply `--bias_AA_jsonl` with a log-odds bias of -2.0 on alanine. Optional mild positive bias on hydrophobics (L, I, V) for core packing and on aromatics (W, Y) for UV handles and intrinsic fluorescence. Sources: Householder et al. [4] (explicit bias), Liu et al. [2] (composition filtering downstream). Targeted effect: hero-class designs with 15 to 25% alanine instead of 40%, reduced aggregation risk, UV-quantifiable proteins. Risk: too aggressive a bias could degrade fold quality. Mitigation: compare biased vs. unbiased sampling on the same backbones in cycle 03 to confirm the bias improves rather than degrades the overall yield.
+- `iface_pep` — restricted to binder↔peptide residue pairs within 8 Å
+- `iface_mhc` — restricted to binder↔(HLA + β2m) pairs within 8 Å
+- `iface_tot` — all binder↔target pairs
 
-**Intervention 3: more sequences per backbone (Stage 2 MPNN).** From `num_seq_per_target=4` to `num_seq_per_target=8`. Total candidates rise from 104 to ~208; fan-in remains the top 50 by NLL. Rationale: backbone 2079 produced 1 passing sequence out of 4. With 8 samples per backbone, a viable backbone produces a tighter cluster of passes (2 to 3 expected by Poisson approximation), confirming the backbone is genuinely viable rather than a stochastic singleton. Targeted effect: fewer false negatives where a viable backbone produces 0 of 4 passing sequences.
-
-**Optional Stage 1b: partial diffusion from design_2079.** Use RFdiffusion's partial diffusion mode seeded from the cycle 02 hero. Add 20 to 30 noise steps and rediffuse with the same contig and hotspots. This reuses a proven-viable scaffold as a starting point, the same way Liu et al. [2] reuse the mage-513 scaffold for scaffold repurposing. Targeted effect: generate a cluster of cycle 02 hero variants with the same general topology but different surface chemistries, both to characterize the local "design basin" around the hero and to provide diversity for downstream specificity screening. Risk: cluster too tight to be informative. Mitigation: run a small pilot (20 to 40 partial-diffusion designs) before committing to the full set.
-
-**Halt threshold tightening.** From 0.10 (cycle 02, permissive calibration) to 0.20 (cycle 03, production criterion). If the three core interventions deliver the expected ~5 to 15× yield lift, cycle 03 should produce 10 to 25% strict-cut pass rates, well within the post-optimization yield range that Liu et al. [2] report. A 20% halt then gates cycle 04 launch on whether the interventions delivered the expected lift.
-
-The intent of cycle 03 is to move from "calibration cycle that proved the pipeline works" to "production cycle that produces wet-lab candidates." If cycle 03 yields 10% or more strict-cut pass on the same target, individual designs become candidates for in silico specificity panning (§9 Tier 3, planned) and eventually experimental validation. Before any cycle 03 hero would be considered a wet-lab candidate, two further computational checks are recommended: a short MD simulation (50 to 100 ns) to filter out near-misses that look good to AF2 but are dynamically unstable (a failure mode reported in Johansen et al. [1]), and the Tier 3 cross-pan against an off-target panel curated by the Hamming scan from Householder et al. [4].
+`iface_pep = inf` is a hard, interpretable signal: the binder makes no contact with the peptide at all. The control panel calibrates the metric directly — positives sit at `iface_pep` 1.46–2.60, and the P3 specificity-failure control degrades on this channel while holding on `iface_mhc` (§4). This is the methodological core of the project: a specificity signal computed from a single complex prediction, before any cross-pan, that standard funnels discard by aggregation. It is an in-silico signal, not an affinity measurement.
 
 ---
 
-## 9. Tier 3: specificity screening (planned)
+## 8. Cycle 03 (scaffold-based) — summary
 
-Cycle 03 produces a small set of designs (~5 to 12 expected with the interventions above) that AF2 trusts will fold tightly against the cognate target. The cycle 1 P3 result already showed these metrics don't carry specificity information by themselves. Tier 3 builds the specificity readout in two stages.
+Cycle 03 (sub-run A) replaced de novo generation with partial diffusion (`partial_T=15`) from 152 aligned BAKER scaffolds onto the truncated three-chain target, with ProteinMPNN amino-acid bias (A: −2.0; E/L/R: +1.0) and `num_recycles=6`. Full detail in [cycle_03.md](cycle_03.md); the headline results:
 
-Stage 3a, sequence-based off-target panel curation, follows the in silico safety scan from Householder et al. [4]. Download HLA-A\*02:01-presented self-peptides from MHC Motif Atlas and IEDB, score by Hamming distance to the cognate RMFPNAPYL, and retain the closest neighbors as candidate off-targets. Stage 3a is CPU-only and depends only on the target peptide, so it can run in parallel with cycle 03 Stage 2.
-
-Stage 3b, structural cross-panning. For each surviving binder, run AF2-multimer against each off-target pMHC and compute the same interface metrics. The specificity signal is the contrast: a useful binder shows tight metrics for the cognate and degraded metrics across the off-target panel. Expected scale ~10 binders × ~15 off-targets × ~3 min per AF2 prediction, roughly 7 to 8 GPU hours, reusing all of Stage 2's infrastructure.
-
-This is the differentiating depth of the pipeline. The Jenkins lab's published platform [1] performs the equivalent cross-pan before any wet-lab handoff.
-
----
-
-## 10. Beyond specificity (planned)
-
-Three further stages complete the architecture.
-
-Stage 4, embedding and diversity curation: ESM-2 sequence embedding of surviving designs, UMAP plus farthest-point sampling to select a structurally diverse subset for experimental synthesis. CPU-only, minutes of wall time. The point is to avoid sending 20 near-clones to the lab when 20 diverse candidates would teach more.
-
-Stage 5, active learning: surrogate model (XGBoost or small MLP) trained on design-outcome pairs from experimental rounds, with uncertainty-aware acquisition for the next cycle's priorities. The computational framework is small. The science requires wet-lab feedback this pipeline can't generate alone, which is the experimental partnership the PhD project would build out. The Hadrup group's DNA-barcoded MHC multimer "TCR fingerprinting" platform [6] is the canonical experimental readout for this kind of feedback.
-
-Stage 6, reporting: cycle metrics, plots, structured markdown report. Already partially in place via the Snakemake DAG and the per-stage `summary.json` contract.
+- **Funnel:** 150 backbones (150 unique scaffolds) → 72 geometry-pass (48%, up from 13%) → 288 sequences → 288 AF2 folds.
+- **Peptide engagement:** only 91/288 (32%) make any peptide contact; median engager `iface_pep` 14.2 (barely-contact); **one** design in the positive-control band.
+- **Top by standard metrics:** design_3084_seq02 (`iface_tot` 1.56, ipTM 0.89 — the best overall interface, exactly what a standard funnel would rank first) and design_3054_seq00 (`iface_tot` 1.61, `iface_pep` inf — confirmed framework-only). Neither is the peptide reader; a standard funnel picks one of them and never sees 3010.
+- **The one reader:** design_3010_seq00 (§9).
+- **Scaffold lineage finding:** cross-allele scaffolds (HLA-CA RMSD 4–6 Å) passed at 54% vs 38% for A\*02:01-native (<1 Å) scaffolds — HLA structural similarity is *not* predictive of transfer quality (see [methodological_lessons.md](methodological_lessons.md)).
 
 ---
 
-## 11. Engineering rigor and reproducibility
+## 9. The validated lead: design_3010_seq00
 
-The cycle 02 Stage 1 run surfaced four engineering incidents. All four belong to the same class: writer/reader contract drift hidden by mock fixtures that aligned with the wrong assumption.
+One design in 288 contacts the peptide in the control-grade band. From scaffold scaf109 (cross-allele, BAKER cluster 6):
 
-The pattern. A downstream consumer (filename enumerator, chain-identification routine, splice helper) carried an incorrect belief about an upstream producer's output (RFdiffusion's filename convention, its chain assignment). The mock test fixtures had been constructed (in some cases unintentionally) to match the wrong belief, so the canary passed not because the code was correct but because the mock and the code shared the same incorrect assumption. Each of the four was caught by the pipeline's own HALT gates during cycle 02 (zero designs reported complete; every design reported as `binder_length=275`; etc.), then diagnosed, patched, and pinned with a regression test that exercises the real producer's output rather than a fixture mirroring the consumer's expectations. All four are documented in `docs/known_traps.md` (entries #26 through #29).
+| Metric | design_3010_seq00 | Positive band | Framework champ (3054) |
+|---|---|---|---|
+| `iface_tot` | 2.98 | 1.27–1.71 | 1.61 |
+| `iface_pep` | **2.10** | 1.46–2.60 | inf |
+| `iface_mhc` | 3.35 | — | — |
 
-Two engineering principles fell out.
+3010 is the only design that reads the peptide more tightly than the framework. Per-residue contact analysis (AF2-predicted geometry; chains confirmed A=HLA / B=peptide RMFPNAPYL / C=binder, no numbering offset):
 
-Mock canaries that align with the wrong assumption are tautological. Test against the real producer at least once, even if as a synthetic regression test that mimics the real writer's naming and chain conventions. A canary that only exercises the mock is a canary that validates nothing useful.
+- Tight (≤ 5 Å) contact across the entire solvent-exposed central bulge **P4–P8**, including **both** specificity residues — N5 at 2.34 Å and Y8 at 2.71 Å (Y8 PAE 4.17, a confident contact).
+- The A\*02:01 anchors (P2-Met, P9-Leu) are not tightly engaged (P2 at 6.81 Å; P9 grazes at 4.40 Å) — the binder reads the variable, specificity-bearing face, not the buried anchors.
+- A contiguous binder segment (residues 48–60) forms the reader. **R55 contacts both N5 and Y8** — the specificity linchpin; E57 reads P4/P5.
 
-Loud failures beat silent fallbacks. The four original code paths all had silent picks ("if multiple chains, pick A"; "if filename doesn't match, skip the design"). These let broken contracts produce numbers instead of errors. Every fix replaced the silent pick with a `ValueError` carrying diagnostic context. Numbers without context can be wrong; errors are always information.
-
-A `--skip-subprocess` affordance was added during cycle 02 and reduced post-bug debugging from ~10 hours (re-run RFdiffusion) to ~8 seconds (re-enumerate existing PDBs). Without it, cycle 02 debugging would have stretched across days. Build re-evaluation paths into any stage with expensive primary compute.
-
-Reproducibility. The repo bootstraps on a RunPod A100 pod via `bootstrap.sh`. The script installs two Python environments (the main uv-managed pipeline env, and a SE3nv conda env that RFdiffusion needs), pins the JAX and PyTorch versions known to be compatible, and clones model weights. Snakemake mock mode runs the full DAG with synthetic fixtures and gates CI on every push. Dev-only scratch files are gitignored.
+This is the "reads WT1" outcome rather than the "grazes the flanks" outcome, and it yields a falsifiable, residue-level prediction: substituting N5 or Y8, or mutating binder R55, should collapse `iface_pep`. That is the decisive cycle-04 specificity test (§11). **Caveats:** n = 1; in silico only; and 3010 is a weaker overall binder than the validated positives (`iface_tot` 2.98 vs 1.27–1.71). It is a characterized lead, not a result.
 
 ---
 
-## 12. References
+## 10. The central finding: framework bias is structural
+
+The limiting failure mode across both cycles is that designs engage the conserved MHC framework rather than the variable peptide. This is the field's central pMHC challenge [1][2][4], and the pipeline made it quantitative: cycle-02 peptide engagement 40%, cycle-03 32%, with one control-grade peptide reader total.
+
+A compositional explanation was hypothesized and tested. The cycle-03 amino-acid bias drove net charge strongly anionic (−1.6 → −9.1), and the MHC α1/α2 walls present a large charged surface while the peptide is small and partly buried — suggesting charged binders find electrostatic complementarity with the framework. **The hypothesis was falsified.** Peptide-engaging designs were *more* anionic than peptide-blind ones (mean net charge −12.4 vs −7.6, the opposite of the predicted direction), with a weak reverse within-engager correlation (~0.11). The decisive evidence is single-backbone: on scaffold scaf158, seq00 gives `iface_pep` inf while seq01 gives 5.23 — same backbone, different sequence, peptide contact modulated only at the margin. Backbone geometry sets the regime; sequence cannot rescue a backbone whose binder is placed away from the peptide. Peptide-blindness is structural — an RFdiffusion placement property — not compositional. The fix therefore belongs at the generation stage, not in sequence design.
+
+Including MHC-framework hotspots was not an error: the validated positive controls P1/P2 contact *both* peptide and framework (a 9-mer alone is too small an interface for affinity). The empirical finding is that the *balance* skewed entirely to framework — and that BAKER-scaffold reuse, by inheriting framework-favoring topologies, slightly worsened it relative to de novo generation.
+
+---
+
+## 11. Honest cross-cycle comparison
+
+Cycles 02 and 03 are **not** a controlled A/B test. At least five knobs changed simultaneously: generation mode (de novo → partial diffusion from BAKER scaffolds), ProteinMPNN bias (none → A/E/L/R bias), AF2 recycles (3 → 6), target geometry (full four-chain → truncated three-chain), and the stored iPAE definition (interface-8 Å → position-slice). No single-variable effect can be attributed.
+
+What survives the confound is the qualitative, geometry-independent finding: **both** strategies are dominated by peptide-blind framework binders (cycle-02 hero `iface_pep` inf; cycle-03 framework champions `iface_pep` inf; 32–40% peptide engagement; one reader). The interface-8 Å recomputation removes the metric-definition confound but not the target-geometry one — so the cleanest cross-cycle statement is that framework bias is robust to the generation strategy, not that one cycle's binders are "N× better" than the other's. A single forced synthesis claiming one effect would misrepresent a five-knob change; this comparison is reported as the bounded statement the data support.
+
+---
+
+## 12. Cycle 04 plan
+
+The diagnosis (placement, not composition) and the current tool landscape define the next campaign. The generative model is not the lever — running more RFdiffusion with the same conditioning would produce more framework binders.
+
+1. **Fix conditioning (the lever).** Peptide-only hotspot conditioning at Stage 1 — drop the MHC-framework hotspots (A65/66/150/155), keep peptide hotspots — so the diffusion trajectory anchors on the peptide. Free; directly targets the diagnosed cause.
+2. **Scale 10–50×.** The field tests thousands of designs to validate a handful; this pilot tested one. Scale the front of the funnel to match.
+3. **Generate in parallel with two engines.** RFdiffusion (for topological diversity and the partial-diffusion control already working) **and** BindCraft [7], an AF2-hallucination pipeline reporting 10–100% experimental success (avg ~46%) with fewer than 100 designs needing testing, outperforming RFdiffusion, AlphaProteo, and Chai-2. BindCraft is not a pMHC solution by itself — it targets a surface, so the peptide-versus-framework competition persists, and it has reported failures (PD-1/PD-L1) — but it is the strongest current option for raw hit rate. Note that RFdiffusion2 [9] is an enzyme/atomic-motif scaffolding model, *not* a binder upgrade; the binder-relevant RFdiffusion2 work is a separately fine-tuned antibody network [10] (a different modality, though notably applied to a Phox2b pMHC scFv).
+4. **Upgrade the filter cascade.** A meta-analysis of 3,766 experimentally tested binders found interface-focused metrics — notably the AF3-derived ipSAE — outperform ipTM and `pae_interaction` for predicting experimental success [8]. Cascade: ipSAE + AF3/Boltz-2 re-prediction + the `iface_pep` peptide-contact gate (this work) + short MD on survivors (Johansen et al. [1] used MD to catch failures that passed ipTM/pLDDT).
+5. **Decisive specificity test for 3010.** Fold 3010 against single-position peptide mutants (Y8A, N5A) and the IEDB off-target panel; if 3010 genuinely reads N5/Y8 via R55, `iface_pep` should collapse while `iface_mhc` holds — the in-silico analog of the Bentzen et al. [6] fingerprinting alanine scan.
+6. **Scaffold pre-filtering (from cycle-03 findings).** Pre-select scaffolds by binder-to-peptide proximity rather than HLA-CA RMSD, by binder length (to remove the length-out-of-range failures), and from high-pass clusters.
+
+---
+
+## 13. Tier 3 and beyond (planned)
+
+**Tier 3 — specificity.** Sequence-based off-target panel curation by Hamming distance to RMFPNAPYL [4] (CPU-only, peptide-dependent only), then AF2/Boltz cross-panning of survivors against each off-target pMHC, using `iface_pep` as the contrast axis. The Jenkins platform [1] performs the equivalent cross-pan before any wet-lab handoff.
+
+**Stage 4 — diversity.** ESM-2 embedding + farthest-point sampling to select a structurally diverse subset for synthesis.
+
+**Stage 5 — active learning.** A surrogate (LightGBM / GP, UCB acquisition) trained on design–outcome pairs once wet-lab feedback exists — the experimental partnership a PhD project would build, with Bentzen-style DNA-barcoded MHC-multimer fingerprinting [6] as the canonical readout.
+
+---
+
+## 14. Reproducibility
+
+The repo bootstraps on a RunPod A100 pod via `bootstrap.sh` (two Python environments, pinned JAX/PyTorch, model weights). Snakemake mock mode runs the full DAG on synthetic fixtures in under a second and gates CI on every push. All numerical thresholds are externalized to `configs/thresholds.yaml`; no magic numbers. Per-stage halt gates surface upstream breakage as loud failures rather than silent fallbacks. Engineering-level gotchas are logged separately in `docs/known_traps.md`; the conceptual pitfalls that bear on the science are in [methodological_lessons.md](methodological_lessons.md). Heavy run outputs (raw AF2 predictions, the full design set) stay on the pod and are reproducible from the committed configs; only the curated analysis tables, the one validated structure (design_3010), and the two hero contact tables are committed.
+
+---
+
+## 15. References
 
 [1] Johansen, K.H., Wolff, D.S., Scapolo, B., Fernández-Quintero, M.L., Christensen, C.R., Loeffler, J.R., Rivera-de-Torre, E., Overath, M.D., Munk, K.K., Morell, O., Viuff, M.C., Lacunza, I., Damm Englund, A.T., Due, M., Gharpure, A., Forli, S., Rodriguez Pardo, C., Tamhane, T., Andersen, E.Q., Björnsson, K.H., Fernandes, J.S., Voss, L.F., Thumtecho, S., Ward, A.B., Ormhøj, M., Hadrup, S.R., Jenkins, T.P. De novo-designed pMHC binders facilitate T cell-mediated cytotoxicity toward cancer cells. *Science* **389**(6758) (2025). DOI: [10.1126/science.adv0422](https://doi.org/10.1126/science.adv0422). PDB: 9NNF.
 
@@ -335,21 +226,22 @@ Reproducibility. The repo bootstraps on a RunPod A100 pod via `bootstrap.sh`. Th
 
 [3] Hadrup, S.R. Artificial intelligence is expediting the development of therapeutic immunotherapies. *ESMO Daily Reporter*, ESMO Immuno-Oncology Congress 2025 opinion (2025). Keynote: "Using AI to advance therapeutic development of immunotherapies." Available at [dailyreporter.esmo.org](https://dailyreporter.esmo.org/esmo-immuno-oncology-congress-2025/opinions/artificial-intelligence-is-expediting-the-development-of-therapeutic-immunotherapies).
 
-[4] Householder, K.D., Xiang, X., Jude, K.M., Deng, A., Obenaus, M., Zhao, Y., Wilson, S.C., Chen, X., Wang, N., Garcia, K.C. De novo design and structure of a peptide-centric TCR mimic binding module. *Science* **389**(6758), 375-379 (2025). DOI: [10.1126/science.adv3813](https://doi.org/10.1126/science.adv3813). PDB: 9MIN.
+[4] Householder, K.D., Xiang, X., Jude, K.M., Deng, A., Obenaus, M., Zhao, Y., Wilson, S.C., Chen, X., Wang, N., Garcia, K.C. De novo design and structure of a peptide-centric TCR mimic binding module. *Science* **389**(6758), 375–379 (2025). DOI: [10.1126/science.adv3813](https://doi.org/10.1126/science.adv3813). PDB: 9MIN.
 
 [5] Mares, S.E., Espinoza Weinberger, A., Ioannidis, N.M. Generation of structure-guided pMHC-I libraries using Diffusion Models. *2nd International Conference on Machine Learning in Generative AI and Biology Workshop* (2025). Code: [github.com/sermare/struct-mhc-dev](https://github.com/sermare/struct-mhc-dev).
 
-[6] Bentzen, A.K., Such, L., Jensen, K.K., Marquard, A.M., Jessen, L.E., Miller, N.J., Church, C.D., Lyngaa, R., Koelle, D.M., Becker, J.C., Linnemann, C., Schumacher, T.N.M., Marcatili, P., Nghiem, P., Nielsen, M., Hadrup, S.R. T cell receptor fingerprinting enables in-depth characterization of the interactions governing recognition of peptide-MHC complexes. *Nature Biotechnology* **36**(12), 1191-1196 (2018). DOI: [10.1038/nbt.4303](https://doi.org/10.1038/nbt.4303).
+[6] Bentzen, A.K., Such, L., Jensen, K.K., Marquard, A.M., Jessen, L.E., Miller, N.J., Church, C.D., Lyngaa, R., Koelle, D.M., Becker, J.C., Linnemann, C., Schumacher, T.N.M., Marcatili, P., Nghiem, P., Nielsen, M., Hadrup, S.R. T cell receptor fingerprinting enables in-depth characterization of the interactions governing recognition of peptide-MHC complexes. *Nature Biotechnology* **36**(12), 1191–1196 (2018). DOI: [10.1038/nbt.4303](https://doi.org/10.1038/nbt.4303).
+
+[7] Pacesa, M., Nickel, L., Schmidt, J., Pyatova, M., Schellhaas, C., Kissling, L., Sankaran, S., Ahmed, T., Bonati, J., Rosset, S., Wang, C., Dauparas, J., Ovchinnikov, S., Correia, B.E. One-shot design of functional protein binders with BindCraft. *Nature* (2025). DOI: [10.1038/s41586-025-09429-6](https://doi.org/10.1038/s41586-025-09429-6).
+
+[8] Overath, M.D., Rygaard, K.B., et al. Predicting experimental success in de novo binder design: a meta-analysis of 3,766 experimentally characterised binders. Preprint (2025). Introduces the AF3-derived ipSAE as a target-agnostic interface filter outperforming ipTM and `pae_interaction`.
+
+[9] Ahern, W., Yim, J., Tischer, D., Salike, S., Woodbury, S., Kim, D., Kalvet, I., Kipnis, Y., Coventry, B., Altae-Tran, H., Bauer, M., Barzilay, R., Jaakkola, T., Krishna, R., Baker, D. Atom-level enzyme active site scaffolding using RFdiffusion2. *Nature Methods* (2025). DOI: [10.1038/s41592-025-02975-x](https://doi.org/10.1038/s41592-025-02975-x).
+
+[10] Bennett, N.R., et al. Atomically accurate de novo design of antibodies with RFdiffusion. *Nature* (2025). DOI: [10.1038/s41586-025-09721-5](https://doi.org/10.1038/s41586-025-09721-5).
 
 ---
 
 ## TL;DR for the application
 
-This pipeline implements a calibrated three-tier specificity-screening apparatus for de novo pMHC-I targeting minibinders.
-
-1. Tier 1 (calibration, cycle 1). Five published controls established a ~20 Å iPAE gap and ~60 point ipLDDT gap between positives (4.5 to 4.9 Å iPAE) and negatives (24.7 to 25.7 Å), and reproduced AF2's known peptide-identity blind spot (P3, the WT1 binder on MART-1, scored on par with the cognate-target positive).
-2. Tier 2 (sensitivity, cycle 02 end-to-end). 200 RFdiffusion backbones with motif RMSD ~0.12 Å, 26 geometry-pass (13%, Stage 1), 50 sequences folded by AF2-multimer, 1 hero design at iPAE 6.41 Å in the cycle 1 positive band (2% strict-cut, Stage 2). The 2% yield is at the lower end of the unconstrained pre-optimization range Liu et al. [2] report, and is the expected calibration baseline. The hero is a 99-aa 4-helix bundle with 976 Å² BSA, in the minibinder size class. Two qualifications: backbone 2079 is a sequence-design lottery win (1 of 4 sequences passes, not a robust scaffold) and the hero sequence is 40% alanine (the textbook ProteinMPNN regularizer trap; AF2-orthogonal but wet-lab-consequential).
-3. Cycle 03 (production target). Three interventions, each anchored to a specific cycle 02 failure mode and a specific source paper: densified hotspots plus peptide-centric arcing [2], alanine bias on ProteinMPNN [4], more sequences per backbone. Halt threshold tightens from 0.10 to 0.20. Expected yield 10 to 25% strict-cut pass.
-4. Tier 3 (specificity, planned, cycle 04+). Off-target panel curation by Hamming proteome scan [4] plus structural cross-panning [1].
-
-The architecture mirrors the *Science* 2025 landmark papers from Johansen et al. [1] and Liu et al. [2] with explicit engineering rigor: calibration anchors, mock-mode CI, a multi-entry trap book, spec-driven implementation. It is reproducible, end-to-end testable, and naturally extends to active learning when wet-lab feedback (Bentzen-style TCR fingerprinting [6]) becomes available. All results in this writeup are in silico; no experimental validation has been performed.
+A calibrated, reproducible de novo pMHC-I minibinder pipeline mirroring the Johansen et al. [1] and Liu et al. [2] *Science* 2025 platforms, distinguished by a **peptide-resolved interface metric** that measures whether a design reads the disease-defining peptide or the conserved MHC framework. That metric (a) exposed a blind spot in the standard AF2 funnel, (b) found and reconciled two incompatible iPAE definitions across cycles, (c) reclassified this project's own cycle-02 hero as a peptide-blind framework binder (closest residue 28–40 Å from the peptide), (d) surfaced one design (3010) that reads both WT1 specificity residues N5/Y8 via binder R55 in the control-grade band, and (e) supported an honest, falsified charge hypothesis that localized the dominant failure (framework bias) to RFdiffusion placement rather than sequence composition. The cycle-04 plan fixes the diagnosed cause with peptide-only conditioning, scales 10–50×, runs RFdiffusion and BindCraft [7] in parallel, and adds an ipSAE-based filter cascade [8]. All results are in silico; no experimental validation has been performed.
