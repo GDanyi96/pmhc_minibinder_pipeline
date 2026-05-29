@@ -120,4 +120,13 @@ A charge-driven explanation for framework bias was hypothesized (anionic binders
 - Scale 10–50×, run BindCraft [7] alongside RFdiffusion, and add the ipSAE-based filter cascade [8] plus the `iface_pep` gate (narrative §12).
 - Run the 3010 specificity test (N5A/Y8A mutants + off-target panel).
 
+
+## Data & code
+
+- [Master design table — both cycles](../results/master_design_journey.csv) — 50 cycle-02 + 288 cycle-03 folds, both iPAE definitions
+- [Candidate dossier](../results/cycle_03/analysis/candidate_dossier.csv) — ranked cycle-03 candidates
+- [Scaffold lineage](../results/cycle_03/analysis/scaffold_lineage.csv) — 152 BAKER scaffolds: HLA-RMSD, cluster, pass rate
+- [design_3010 structure (AF2 model)](../results/cycle_03/analysis/design_3010_seq00_af2_model.pdb) — the validated lead
+- [12_design3010_peptide_contacts.py](../analysis/scripts/12_design3010_peptide_contacts.py) — reproduces the §6 contact table
+
 Supporting data committed to the repo: `results/cycle_03/analysis/master_design_journey.csv` (the full 338-design funnel with both iPAE definitions), `candidate_dossier.csv`, `scaffold_lineage.csv`, the two hero contact tables (`design_3010_peptide_contacts.txt`, `design_2079_peptide_contacts.txt`), and the single validated structure `design_3010_seq00_af2_model.pdb`. The raw 288-design AF2 output set stays on the pod, reproducible from the committed configs.
