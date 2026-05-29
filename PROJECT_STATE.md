@@ -2,24 +2,25 @@
 
 **This is the single authoritative state document.** Read this first in any new Claude thread.
 
-*Last updated: Sunday, May 24, 2026 (post cycle-03 Stage 1 sub-run A complete: 72/150 geometry-pass = 48%, 3.7× cycle 02 baseline).*
+*Last updated: Thursday, May 29, 2026 (post cycle-03 Stage 2 sub-run A + full analysis: 288 AF2 folds, one control-grade peptide reader `design_3010_seq00`; metric audit complete; cycle-02 hero `design_2079` reclassified as peptide-blind. Cycle 03 merged to `main`. Ready to scope cycle 04.).*
 
 ---
 
 ## 1. Thirty-second status
 
 - **Goal**: production-grade de novo pMHC-I minibinder design pipeline mirroring `HADRUP_JENKINS_2025` (RFdiffusion → ProteinMPNN → AF2 → MD → IMPAC-T cells). PhD application portfolio targeting Jenkins/Hadrup lab (DTU/Glasgow).
-- **Repo**: `github.com/GDanyi96/pmhc_minibinder_pipeline`. Active branch: `feat/cycle-03-baker-truncation` (PR #15 DRAFT, contains contig fix + chain layout reconciliation, NOT merged to main).
+- **Repo**: `github.com/GDanyi96/pmhc_minibinder_pipeline`. **Cycle 03 (sub-run A) code, results, analysis and the portfolio docs are merged to `main`** (master results table, the validated 3010 structure, figures, narrative + cycle pages all committed).
 - **Compute**: RunPod A100 SXM 80GB pod `925f65a88d93` on network volume in **US-WA-1**. Old US-CA-2 pod stopped (cold archive).
 - **Workflow**: Claude Code Web for repo writes; RunPod web terminal for compute. Never push from pod.
 - **Cycle status**:
   - Cycle 1 controls (full target): validated.
-  - Cycle 2 Stage 1 + Stage 2: complete. Hero `design_2079_seq00` (99aa 4HB, iPAE 6.41, ipLDDT 91.07).
-  - **Cycle 3 controls (truncated target): validated** — P1 iPAE 3.33, P2 3.73, N1 22.0, ~18 Å dynamic range. Halt thresholds recalibrated to iPAE≤6.0, ipLDDT≥92.
-  - **Cycle 3 Stage 1 sub-run A (BAKER scaffold library + partial diffusion): complete, 72/150 (48%) geometry-pass, median 6.5 hotspot contacts, 98 min wall on A100.**
-  - Cycle 3 Stage 1 sub-run B (hero seed partial diffusion): **deferred, blocked** — see §16.
-  - Cycle 3 Stage 2 truncated path: **implemented (mock-validated), pending pod real-run** — see §16. Trap #33 filename fix landed in the same PR.
-- **Immediate next step**: pod real-run of Stage 2 sub-run A (`snakemake results/cycle_03/stage2/subrun_a/stage2_summary.json --config cycle=03 mock=false -j1`) to produce final heroes. Then optionally sub-run B (needs `_derive_contigs_subrun_b`, out of scope of this PR).
+  - Cycle 2 Stage 1 + Stage 2: complete. Hero `design_2079_seq00` (99aa 4HB) — **reclassified by the peptide-resolved metric as PEPTIDE-BLIND** (`iface_pep = ∞`; closest binder residue sits 28–40 Å from every peptide atom). It is a confident MHC-framework binder, not a peptide reader.
+  - Cycle 3 controls (truncated target): validated (both metric definitions reconciled — see §16).
+  - Cycle 3 Stage 1 sub-run A (BAKER scaffolds + partial diffusion): complete, 72/150 (48%) geometry-pass.
+  - **Cycle 3 Stage 2 sub-run A: COMPLETE — 288 AF2 folds. Only 91/288 (32%) engage the peptide; one design, `design_3010_seq00`, reads it in the control-grade band (`iface_pep` 2.10, contacting WT1 specificity residues N5/Y8 via binder R55). The rest are framework binders.**
+  - **Metric audit complete**: cycle 02 stored iPAE as interface-8 Å (Jenkins Fig 1B style); cycle 03 stored it as the Bennett position-slice. Both recomputed; rankings now use interface-8 Å consistently, decomposed into `iface_pep` / `iface_mhc` (see §4).
+  - Cycle 3 Stage 1 sub-run B (hero seed partial diffusion): **deferred** — see §16.
+- **Immediate next step**: scope **cycle 04** (not started). Diagnosis to carry in: the framework bias is **structural** (RFdiffusion placement), not compositional — a charge-driven hypothesis was tested and falsified, and the bias is robust across both de novo (c02) and scaffold (c03) runs.
 
 ---
 
@@ -95,11 +96,11 @@ Always anchor claims to one of these. Mark structural prediction outputs as pred
 | **Chain layout truncated controls / Stage 2 FASTA** | `HLA[1:180]:peptide:binder` → AF2 output A=HLA, B=peptide, C=binder | Matches BAKER convention; controls baseline |
 | **`LAYOUT_CHAINS["truncated"]`** | `binder="C", peptide=("B",), mhc=("A",)` | `workflow/scripts/compute_metrics.py` |
 | **Stage 2 FASTA for sub-run A designs (NOT YET IMPLEMENTED)** | Must reorder from design's A=binder/B=HLA/C=peptide → FASTA `HLA:peptide:binder` to match `LAYOUT_CHAINS["truncated"]` after AF2 | Pending Stage 2 truncated PR (§16, Trap #33-adjacent) |
-| iPAE definition | Symmetric mean cross-chain PAE binder↔target | `workflow/scripts/compute_metrics.py` |
+| **iPAE definition (post cycle-03 audit)** | **Canonical ranking = interface-8 Å: mean `min(PAE_ij, PAE_ji)` over binder↔target residue pairs ≤ 8 Å (`HADRUP_JENKINS_2025` Fig 1B). Decompose into `iface_pep` / `iface_mhc`; `iface_pep` is the peptide-specificity axis (`iface_pep = ∞` ⇒ no binder atom within 8 Å of the peptide). The Bennett position-slice (`ipae_slice*`) is retained for baseline comparability only. Cycle 02 stored interface-8 Å; cycle 03 stored slice — both recomputed so the cross-cycle ranking is consistent.** | `workflow/scripts/compute_metrics.py`; metric audit |
 | AF2 recycles | 6 baseline, 3 for cycle 02 PoC | Matches Jenkins/Baker |
 | Halt rule, cycle 1 controls | Separation-based: pos↔neg iPAE gap ≥ 10 Å, ipLDDT gap ≥ 30 | Cycle 1 reformulation |
 | Halt rule, Stage 1 cycle 2/3 | `fraction_geometry_pass ≥ 0.10` | Cycle 02 calibration data |
-| **Halt rule, Stage 2 cycle 3 (NEW, truncated)** | **`halt_cut_ipae_max: 6.0`, `halt_cut_iplddt_min: 92.0`** (tightened from cycle 02's 10.0/88.0) | `metrics_truncated_baseline.json`: P1 iPAE 3.33, N1 22.0, ~18 Å dynamic range |
+| **Halt rule, Stage 2 cycle 3 (truncated)** | `halt_cut_ipae_max: 6.0`, `halt_cut_iplddt_min: 92.0` (slice-based, derived from the truncated controls). **Specificity ranking is separate and primary: rank survivors on interface-8 Å `iface_tot`, then gate on `iface_pep` (peptide contact) — not on the slice.** | `metrics_truncated_baseline.json`; metric audit |
 | Seed convention | `seed = cycle * 1000 + offset` per-stage in `configs/seeds.yaml` with reserved ranges | `configs/seeds.yaml` |
 | Install model | Native, no Docker | Operational |
 | MD validation | Cycle 4+ (deferred) | Project plan |
@@ -119,7 +120,7 @@ Always anchor claims to one of these. Mark structural prediction outputs as pred
 | Stage 2 — controls (full target) | ✓ Validated cycle 1 | `scripts/run_controls.py --target=full` |
 | **Stage 2 — controls (truncated)** | ✓ **NEW cycle 03** — validated, recalibrated halt gates | `scripts/run_controls.py --target=truncated`, `results/cycle_03/controls_truncated_baseline/metrics_truncated_baseline.json` |
 | Stage 2 — designs (cycle 02 full target) | ✓ Complete, design_2079_seq00 hero | `scripts/run_stage2.py`, `workflow/scripts/splice_binder.py` (4-chain expected) |
-| **Stage 2 — designs (cycle 03 truncated sub-run A)** | ✓ **NEW cycle 03 — implemented (mock-validated; pending pod real-run).** Forked `splice_binder_subrun_a` (3-chain → A=HLA, B=peptide, C=binder); `run_stage2 --target-layout truncated` threads layout through splice/MPNN(`--chain_list C`)/FASTA(`HLA:peptide:binder`)/metrics. Snakemake rule `stage2_subrun_a` (explicit target). | `scripts/run_stage2.py`, `workflow/scripts/splice_binder.py::splice_binder_subrun_a`, `workflow/rules/02c_stage2_subrun_a.smk`, `tests/test_stage2_subrun_a.py` |
+| **Stage 2 — designs (cycle 03 truncated sub-run A)** | ✓ **COMPLETE — 288 AF2 folds (72 designs × 4 MPNN seqs).** 91/288 engage the peptide; one control-grade reader (`design_3010_seq00`, `iface_pep` 2.10). `splice_binder_subrun_a` (3-chain → A=HLA, B=peptide, C=binder); `run_stage2 --target-layout truncated` threads layout through splice/MPNN(`--chain_list C`)/FASTA(`HLA:peptide:binder`)/metrics. | `scripts/run_stage2.py`, `workflow/scripts/splice_binder.py::splice_binder_subrun_a`, `workflow/rules/02c_stage2_subrun_a.smk`, `tests/test_stage2_subrun_a.py` |
 | Stage 3 (in silico cross-pan) | Architected, not coded | spec TBD |
 | Stage 4 (embedding diversity curation) | Architected, not coded | spec TBD |
 | Stage 5 (MD validation) | Cycle 4+ | deferred |
@@ -317,18 +318,15 @@ The "HLA-CA RMSD correlates with scaffold transfer quality" intuition felt obvio
 
 ---
 
-## 14. After cycle 03 sub-run A — queued work
+## 14. Queued work (status)
 
-1. **Stage 2 truncated path PR** (CC, Priority 1 item #1 above). Plumb the 72 designs through ProteinMPNN → AF2-multimer. Halt gate iPAE≤6.0, ipLDDT≥92.0. Targets to beat: P1 iPAE 3.33, P2 3.73; N1 22.0.
-2. **Trap #33 filename fix PR** (CC, Priority 1 item #2). Removes symlink hack from recovery path.
-3. **Optional Sub-run B** (CC, Priority 1 item #3, then GPU run). Hero seed partial diffusion. ~30 designs target.
-4. **Cycle 04 plan** (artifact): scaffold pre-filter by binder-to-peptide CA proximity (NOT HLA-CA RMSD per Trap #40); length pre-filter to 70-110 (drops the 15 length-out-of-range failures up front); hotspot ablation experiment (with vs without `ppi.hotspot_res` for partial diffusion, paired on well-placed scaffolds); promote `mage-513` as privileged donor scaffold for a third sub-run.
-5. **Cross-pan (Stage 3)** after Stage 2 truncated validates: MART-1 ELAGIGILTV + HIV KLTPLCVTL on the truncated convention.
+1. ✅ **Stage 2 truncated path** — done. 72 designs → 288 folds; analysis + audit complete.
+2. ✅ **Trap #33 filename fix** — done (single-suffix names native; recurrence guards landed).
+3. **Optional Sub-run B** (hero seed partial diffusion, ~30 designs) — still **deferred**; needs `_derive_contigs_subrun_b` for the 4-chain layout.
+4. **Cycle 04** — **not started.** Scoped separately (carries the structural-placement diagnosis and the `iface_pep` gate). Not detailed here yet.
+5. **Cross-pan (Stage 3)**: MART-1 ELAGIGILTV + HIV KLTPLCVTL on the truncated convention — after cycle 04.
 6. **MD validation (Stage 5)**: cycle 04+.
-7. **Application portfolio**: notebook draft anchored to:
-   - Cycle 02: de novo baseline, 13% pass, hero design_2079
-   - Cycle 03: scaffold partial diffusion 3.7× improvement (48%), HLA-RMSD non-predictiveness as methodological finding
-   - Trap book as engineering-rigor evidence (Traps #28–#40 cumulative)
+7. ✅ **Application portfolio** — built and committed (`README.md`, `docs/narrative.md`, `docs/cycle_02.md`, `docs/cycle_03.md`, `docs/methodological_lessons.md`, `docs/figures/`). Spine: the interface-8 Å / `iface_pep` metric audit, the validated lead `design_3010`, the `design_2079` peptide-blind reclassification, and the framework-bias diagnosis (honestly framed, n=1 pilot).
 
 ---
 
@@ -365,6 +363,8 @@ The "HLA-CA RMSD correlates with scaffold transfer quality" intuition felt obvio
 
 Dynamic range ~18 Å preserved. Halt thresholds recalibrated to iPAE≤6.0, ipLDDT≥92.0.
 
+**Note (metric audit):** the control table above is the Bennett **position-slice** (`ipae_slice`). Recomputed on the canonical **interface-8 Å** metric, the same truncated controls give positives `iface_tot` 1.27–1.71 / `iface_pep` 1.46–2.60 / ipLDDT 93–97; negatives `iface_tot` 12.7–13.4 / `iface_pep` ∞ / ipLDDT 58–63. P3 (MART-1 mismatch) degrades on `iface_pep` (2.60 vs P1 1.70) while `iface_mhc` holds (1.42) — i.e. the peptide channel carries the specificity signal. These interface-8 Å values are the band against which cycle-03 designs are ranked. (Full-target cycle-01 controls sit at a different scale, P1–P3 `iface_tot` 4.5–4.9 / N1–N2 24.7–25.7; do **not** compare full-target and truncated numbers directly — target geometry confounds them.)
+
 ### Stage 1 sub-run A results
 
 | Metric | Value |
@@ -392,18 +392,28 @@ Dynamic range ~18 Å preserved. Halt thresholds recalibrated to iPAE≤6.0, ipLD
 
 Stubbed (`results/cycle_03/stage1/subrun_b/{subrun_summary.json, designs.jsonl}` empty), deferred. Blocked on: (a) Trap #33 filename fix, (b) sub-run B contig derivation helper.
 
-### Stage 2 truncated status
+### Stage 2 sub-run A — COMPLETE
 
-**Implemented (mock-validated; pending pod real-run).** `splice_binder_subrun_a` composes the 3-chain truncated complex (A=HLA, B=peptide, C=binder); `run_stage2 --target-layout truncated` threads the layout through splice → ProteinMPNN (`--chain_list C`) → FASTA (`HLA:peptide:binder`) → `compute_metrics` (`LAYOUT_CHAINS["truncated"]`). Stage 1 verdict gate accepts sub-run summaries via `_stage1_verdict` (derives PASS from `fraction_geometry_pass >= HALT_THRESHOLD`, imported from `run_stage1`). New Snakemake rule `stage2_subrun_a` (explicit target, not in `rule all`). Real-run command on pod: `snakemake results/cycle_03/stage2/subrun_a/stage2_summary.json --config cycle=03 mock=false -j1`.
+288 AF2-multimer folds (72 geometry-passing designs × 4 ProteinMPNN sequences each), `num_recycles=6`, AA-biased sequences (A:−2.0, E/L/R:+1.0). Composition shifted hard from cycle 02: `frac_A` 0.467→0.037, `frac_E+R` 0.178→0.542, net charge −1.6→−9.1, MPNN NLL 0.90→1.19.
 
-### Pull requests in flight
+| Metric | Value |
+|---|---|
+| Folds | 288 |
+| Peptide-engaging (`iface_pep` finite) | **91/288 (32%)** — median engager `iface_pep` 14.2 (barely-contact) |
+| Control-grade peptide readers | **1** (`design_3010_seq00`) |
+| `design_3010_seq00` (THE lead) | `iface_tot` 2.98 / `iface_pep` **2.10** / `iface_mhc` 3.35; from scaf109 (cross-allele, BAKER cluster 6); tight ≤5 Å contact across exposed bulge P4–P8 including both specificity residues **N5 (2.34 Å)** and **Y8 (2.71 Å)**; binder reader residues 48–60; **R55 contacts both N5 and Y8** (specificity linchpin); anchors P2/P9 not engaged |
+| Best overall interface (framework, what a naive funnel ranks #1) | `design_3084_seq02` (`iface_tot` 1.56, ipTM 0.89 — highest) |
+| Framework champion (peptide-blind) | `design_3054_seq00` (`iface_tot` 1.61, `iface_pep` ∞); note `scaf158` seq00 `iface_pep` ∞ vs seq01 5.23 on the *same backbone* |
+| Cycle-02 hero `design_2079_seq00` (re-run via script 13) | `iface_pep` ∞, `iface_mhc` 6.41, every peptide residue 28–40 Å from nearest binder atom → **peptide-blind** |
+| Refuted hypothesis | charge does NOT drive peptide-blindness — engagers are *more* anionic than blind designs (net −12.4 vs −7.6, opposite of predicted), within-engager corr ≈ 0.11. Blindness is **structural** (RFdiffusion placement), not compositional. |
 
-| PR | Branch | Status | Contents |
-|---|---|---|---|
-| #14 | `claude/cycle-03-prep-g2Eu9` | DRAFT off main | Snakemake DAG, configs, align_scaffolds.py, partial_diffuse.py, contact_filter.py, decomposed iPAE |
-| #15 | `feat/cycle-03-baker-truncation` | DRAFT, stacked on #14 | prep_baker_target.py, align_baker_scaffolds.py, LAYOUT_CHAINS truncated, run_controls.py --target=truncated, Trap #31 fix, **Trap #32 contig fix + geometry-gate truncated awareness (latest commit)** |
+Funnel: 152 scaffolds → 150 designs → 72 geometry-pass → 288 folds → 91 peptide-engaging → **1 control-grade reader**. Committed: `results/master_design_journey.csv`, `results/cycle_03/analysis/` (candidate dossier, scaffold lineage, `design_3010` contacts + structure), `analysis/scripts/{12_*,13_*}.py`, `docs/figures/*.png`.
 
-Neither merged to main. Cycle 03 results live on `feat/cycle-03-baker-truncation`.
+> Caveat for any cross-cycle claim: cycles 02 and 03 differ on ≥5 knobs (de novo vs partial diffusion, MPNN AA bias, recycles 3 vs 6, full vs truncated target, iPAE definition). This is **not** a controlled A/B. The only robust cross-cycle statement is qualitative: the framework bias persists in both regimes.
+
+### Branch / merge state
+
+Cycle 03 (sub-run A) code, results, analysis and the portfolio docs are **merged to `main`**. The earlier draft PRs (#14 cycle-03 prep, #15 BAKER truncation) are superseded by the merge. Cycle 03 results no longer live only on a feature branch.
 
 ### Pod-local hotfixes
 
