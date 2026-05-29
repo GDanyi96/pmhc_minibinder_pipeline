@@ -80,6 +80,32 @@ human-readable summary, not as a source of truth.
 
 ---
 
+## Metric conventions (post cycle-03 audit)
+
+The most important convention for ranking designs. Established by the cycle-03
+metric audit — current knowledge, not a future plan.
+
+- **Canonical iPAE = interface-8 Å**: mean `min(PAE_ij, PAE_ji)` over
+  binder↔target residue pairs with atoms ≤ 8 Å apart (`HADRUP_JENKINS_2025`
+  Fig 1B). The iPAE thresholds above refer to this. Rank designs on it.
+- **Always decompose it**: `iface_tot` (all target), `iface_pep`
+  (binder↔peptide only), `iface_mhc` (binder↔MHC only). **`iface_pep` is the
+  specificity axis** — `iface_pep = ∞` means no binder atom is within 8 Å of
+  the peptide, i.e. an MHC-framework binder that ignores the antigen. A low
+  `iface_tot` alone does NOT mean the design reads the peptide; check
+  `iface_pep`.
+- **Bennett position-slice** (`ipae_slice*`, no distance filter) is kept for
+  baseline comparability only; do not rank on it. (Cycle 02 stored interface-8 Å;
+  cycle 03 stored slice — both recomputed so cross-cycle ranking is consistent.)
+- **Regime matters**: full-target (cycle 1/2) and truncated-target (cycle 3+)
+  iPAE values live on different scales — never compare them directly. Use the
+  matching control band.
+- Stored as `ipae_iface`, `ipae_iface_pep`, `ipae_iface_mhc` (+ `ipae_slice*`)
+  in `results/master_design_journey.csv` /
+  `analysis/tables/master_design_journey.parquet`.
+
+---
+
 ## Controls panel (must run every cycle)
 
 | #  | Control                                    | Expected outcome              |
@@ -91,6 +117,12 @@ human-readable summary, not as a source of truth.
 | N2 | Random 65-aa (natural AA freqs)            | iPAE > 20                     |
 
 If P1 falls in the bottom 50 % of designs, the pipeline halts and alerts.
+
+The iPAE figures above are the **full-target** convention (cycle 1/2). Cycle 3+
+runs the same panel on the **truncated** target, scored on interface-8 Å:
+positives `iface_tot` 1.27–1.71 / `iface_pep` 1.46–2.60; negatives `iface_tot`
+12.7–13.4 / `iface_pep` ∞. P3 (MART-1 mismatch) degrades on `iface_pep` while
+`iface_mhc` holds — the peptide channel carries the specificity signal.
 
 ---
 
