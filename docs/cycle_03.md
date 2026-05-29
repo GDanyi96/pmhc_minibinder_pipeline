@@ -33,6 +33,8 @@ These are five simultaneous changes; the comparison to cycle 02 is not controlle
 | Peptide-engaging (`iface_pep` finite) | 91 | 32% |
 | Control-grade peptide reader (`iface_pep` in 1.46–2.60) | **1** | — |
 
+![Cycle 03 funnel: 288 folds, 91 engage the peptide, 1 reads it](figures/cycle03_funnel.png)
+
 The geometry pass rate jumped to 48%, and even cycle-03 *failed* designs have better placement than cycle-02's typical attempt (median hotspot contacts: c03-fail 1, c02-pass 4, c03-pass 6.5). Partial diffusion is also ~8× faster per design (median 18 s vs 145 s GPU inference). But the funnel's end states tell the real story: of 288 designs, only 91 touch the peptide at all, the median engager sits at `iface_pep` 14.2 (barely a contact), and exactly one design reaches the positive-control band.
 
 A new failure mode appeared: 15 of 78 cycle-03 geometry failures (19%) were length-out-of-range, because partial diffusion preserves the BAKER scaffold's binder length and some scaffolds fall outside the 70–110 contig. Cycle-04 fix: pre-filter the scaffold library by binder length.
@@ -78,6 +80,8 @@ The originally stored cycle-03 metrics used the position-slice iPAE (Bennett-sty
 | design_3084_seq02 | — | 1.56 | — | — | Best overall interface + ipTM 0.89; what a standard funnel ranks #1 |
 | design_3054_seq00 | scaf158 / 1 | 1.61 | **inf** | — | Framework champion; tightest MHC binder, zero peptide |
 | **design_3010_seq00** | scaf109 / 6 | 2.98 | **2.10** | 3.35 | **The peptide reader** — only design in the positive band |
+
+![Peptide vs framework (cycle 03): design_3010 is the lone reader in the positive band](figures/pep_vs_framework_scatter.png)
 
 This table is the blind-spot argument in one frame: a standard funnel ranking on `iface_tot`/ipTM picks 3084 or 3054 and never sees 3010, the only design that reads the peptide. design_3010 is also distinctive in sequence — the only hero with cysteines (n = 2), elevated Tyr, lowest hydrophobicity, and net charge −8 (the cycle-03 median, i.e. *not* charge-unusual); ProteinMPNN was less confident in it (score 1.14 vs 3054's 0.86), yet it produced the lowest `iface_pep` of all 288.
 
