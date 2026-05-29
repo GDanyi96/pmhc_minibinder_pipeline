@@ -137,6 +137,8 @@ The fix is to decompose the interface-8 Å iPAE by target sub-chain:
 
 `iface_pep = inf` is a hard, interpretable signal: the binder makes no contact with the peptide at all. The control panel calibrates the metric directly — positives sit at `iface_pep` 1.46–2.60, and the P3 specificity-failure control degrades on this channel while holding on `iface_mhc` (§4). This is the methodological core of the project: a specificity signal computed from a single complex prediction, before any cross-pan, that standard funnels discard by aggregation. It is an in-silico signal, not an affinity measurement.
 
+![design_3010 is the one design reading the peptide; the rest engage framework](figures/pep_vs_framework_scatter.png)
+
 ---
 
 ## 8. Cycle 03 (scaffold-based) — summary
