@@ -107,7 +107,8 @@ Chains confirmed: A = HLA (180 res), B = peptide RMFPNAPYL (1–9, no offset), C
 
 The binder makes its tight (≤ 3.5 Å) contacts exclusively on the central bulge P4–P8. The anchors P2-Met (6.81 Å) and P9-Leu (4.40 Å graze) are not engaged, and the flanks P1/P3 are untouched. Both specificity residues are contacted — N5 (2.34 Å) and Y8 (2.71 Å, PAE 4.17). A single contiguous binder segment (48–60) forms the reader, and **R55 contacts both N5 and Y8** — the specificity linchpin. This is the "reads WT1" outcome required for genuine peptide specificity per Householder et al. [4], and it yields the falsifiable cycle-04 test: mutating N5, Y8, or binder R55 should collapse `iface_pep` while `iface_mhc` holds.
 
-A structural figure of this interface (binder capping the central bulge, MHC helices above) is in [figures/design_3010_peptide_interface.png](figures/design_3010_peptide_interface.png).
+
+![figures/design_3010_peptide_interface.png](figures/design_3010_peptide_interface.png).
 
 ---
 
