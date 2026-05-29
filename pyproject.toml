@@ -56,9 +56,10 @@ packages = ["workflow"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-# Notebooks are exploratory analysis artifacts (committed for the portfolio
-# narrative), not pipeline source; don't gate CI lint on them.
-extend-exclude = ["*.ipynb"]
+# Notebooks and analysis/ scripts are exploratory analysis artifacts
+# (committed for the portfolio narrative), not pipeline source; don't gate CI
+# lint on them.
+extend-exclude = ["*.ipynb", "analysis/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
@@ -67,6 +68,8 @@ ignore = ["E501"]
 [tool.black]
 line-length = 100
 target-version = ["py312"]
+# Mirror ruff: analysis/ holds exploratory portfolio artifacts, not source.
+extend-exclude = "analysis/"
 
 [tool.mypy]
 python_version = "3.12"
