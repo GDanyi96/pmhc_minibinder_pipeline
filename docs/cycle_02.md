@@ -98,6 +98,11 @@ Composition: A 40%, K 15%, E 14%, L 7%, I 6%, G 4%, R 3%, T 3%, F/P/V 2% each, M
 
 The original cycle-02 analysis notebook (`notebooks/cycle_02_report.ipynb`) predates the metric audit and frames 2079 as a positive-band hero; it is superseded by this page.
 
+## Data & code
+
+- [Master design table — both cycles](../results/master_design_journey.csv) — includes all 50 cycle-02 folds, both iPAE definitions
+- [13_design2079_peptide_contacts.py](../analysis/scripts/13_design2079_peptide_contacts.py) — reproduces the §3 contact table (the 2079 reclassification)
+
 ---
 
 *References as numbered in [narrative.md](narrative.md).*
