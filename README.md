@@ -11,6 +11,8 @@ conserved MHC framework. Mirrors the platform from Johansen et al.
 clinical interest for AML and solid tumors. Same target as the Baker lab paper,
 giving a direct experimental literature anchor.
 
+![figures/design_3010_peptide_interface.png](docs/figures/design_3010_peptide_interface.png).
+
 **Stack:** RFdiffusion → ProteinMPNN → AF2-multimer (ColabFold) → interface-metric
 decomposition → (planned) MD, in-silico cross-panning, active learning.
 Snakemake-orchestrated; mock-mode CI; all thresholds externalized to config.
@@ -27,17 +29,17 @@ Snakemake-orchestrated; mock-mode CI; all thresholds externalized to config.
   backbones → 26 geometry-pass (13%) → 50 AF2 folds → 1 design crossing the
   strict cuts. The peptide-contact decomposition reclassified that "hero" as a
   **peptide-blind MHC-framework binder** (closest residue 28–40 Å from the
-  peptide) — a useful negative that the aggregate metrics had hidden.
+  peptide). Learning used for next cycles.
 - **Cycle 3 — BAKER-scaffold partial diffusion.** 150 scaffolds → 72
   geometry-pass (48%) → 288 sequences → 288 AF2 folds. Only 32% engage the
   peptide; **one** design (design_3010_seq00) reads both WT1 specificity residues
   (N5, Y8) in the control-grade band, via a single binder residue (R55).
   Framework bias is structural (a charge hypothesis was raised and falsified),
   so the cycle-04 fix is at the generation stage.
-- **Method.** A metric audit found that the two cycles stored iPAE under two
-  incompatible published definitions (interface-8 Å vs Bennett position-slice);
-  all rankings were recomputed on a single consistent interface-8 Å definition
-  and decomposed into peptide / framework channels.
+
+  
+
+
 
 All results are in silico predictions; no experimental validation has been
 performed.
