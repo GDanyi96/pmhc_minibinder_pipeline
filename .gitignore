@@ -233,6 +233,14 @@ results/**
 !results/**/metrics.json
 !results/**/metrics_*_baseline.json
 !results/**/*.log
+# Portfolio analysis artifacts — intentionally tracked under results/**
+!results/master_design_journey.csv
+!results/cycle_02/
+!results/cycle_02/analysis/
+!results/cycle_02/analysis/**
+!results/cycle_03/
+!results/cycle_03/analysis/
+!results/cycle_03/analysis/**
 wandb/
 .snakemake/
 
@@ -246,6 +254,8 @@ wandb/
 !tests/fixtures/**/*.pdb
 !results/**/stage1/rfdiffusion/samples/*.pdb
 !results/**/stage2/**/samples/*.pdb
+# Portfolio analysis artifact — single tracked PDB (overrides *.pdb above)
+!results/cycle_03/analysis/design_3010_seq00_af2_model.pdb
 
 # Cycle 03 sub-run A: BAKER scaffold library is symlinked in pod-side by
 # setup_cycle03_inputs.py; ignore all contents but keep the dir tracked.
