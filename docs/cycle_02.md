@@ -31,14 +31,11 @@ Cycle 02 ran the full four-chain target end to end with de novo RFdiffusion back
 
 The interface-8 Å distribution: median 22.66 Å, ~70% of folds (35/50) in the 20–25 Å range (the cycle-1 negative zone), min 6.41 Å (the single passing design), max 26.17 Å.
 
-```
-iPAE distribution across 50 AF2 folds (interface-8 Å, 5 Å bins):
-[ 5-10 Å]  █                                    (1)   ← the one passing design
-[10-15 Å]  █                                    (1)
-[15-20 Å]  ██████████                          (10)
-[20-25 Å]  ███████████████████████████████████ (35)   ← cycle-1 negative zone
-[25-30 Å]  ███                                  (3)
-```
+![Cycle 02 funnel: 200 backbones to a single strict-cut pass](figures/cycle02_funnel.png)
+
+![Stage 1 placement deficit: 131 of 200 designs make zero hotspot contact](figures/cycle02_stage1_geometry.png)
+
+![Cycle 02 interface-8Å iPAE: most folds sit in the negative-control zone](figures/cycle02_ipae_distribution.png)
 
 AF2 reads most designs as coherent four-helix bundles that simply do not contact the binding cleft with confidence — the placement deficit propagating from Stage 1, which ProteinMPNN cannot repair.
 
@@ -80,6 +77,8 @@ Every peptide residue is 28–40 Å from the nearest binder atom, with high PAE 
 
 **The backbone is a sequence-design lottery, not a robust scaffold.** The four ProteinMPNN sequences on backbone 2079 scored iPAE 6.41 (passing) / 19.26 / 24.11 / 24.93 — only one finds a binder-like configuration. A robust scaffold yields a tight cluster of passing sequences because geometry, not sequence, sets docking; here three of four fail. (Backbones 2179 and 2100 produced 4/4 well-folded bundles but 0/4 passing — beautiful folds that never touch the cleft.) The cycle-03 fix of sampling more sequences per backbone addresses this false-negative mode, though it does not touch the deeper placement problem.
 
+![Backbone 2079: only 1 of 4 ProteinMPNN sequences passes](figures/design2079_lottery.png)
+
 **The sequence is 40.4% alanine** — the unconstrained ProteinMPNN regularizer trap:
 
 ```
@@ -87,6 +86,8 @@ AAAEKAKEAAKKFKEAAKIAAEKGAEAGIKAIREIGKELLAAAATPAMEALGKAALAAAAAIAAELAAFPERAAEITKRT
 ```
 
 Composition: A 40%, K 15%, E 14%, L 7%, I 6%, G 4%, R 3%, T 3%, F/P/V 2% each, M 1% — zero W, Y, C, H, N, Q, S, D. AF2 does not penalize this, but low-complexity sequences carry elevated aggregation risk in expression and yeast display, and the absence of W/Y removes any UV/A280 quantitation handle. Both Liu et al. [2] and Householder et al. [4] apply a negative alanine bias for exactly this reason; cycle 02 did not. Cycle 03 crushed alanine to ~4% (see [cycle_03.md](cycle_03.md) §4) — a real wet-lab-tractability fix that, importantly, did not change the peptide-engagement problem, which is upstream of sequence design.
+
+![design_2079 amino-acid composition: 40% alanine](figures/design2079_aa_composition.png)
 
 ---
 
