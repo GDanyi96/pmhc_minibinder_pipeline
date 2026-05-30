@@ -1,11 +1,9 @@
 # pMHC-I Minibinder Design Pipeline
 
-A reproducible, end-to-end pipeline for de novo minibinder design against
+A reproducible de novo minibinder design against
 peptide-MHC class I complexes, with a peptide-resolved interface metric that
 measures whether a design reads the disease-defining peptide or only the
-conserved MHC framework. Mirrors the platform from Johansen et al.
-(Science 2025, Hadrup/Jenkins lab) and the Baker lab co-submission
-(Liu et al., Science 2025).
+conserved MHC framework. 
 
 **Target:** WT1 RMFPNAPYL / HLA-A\*02:01, a cancer-testis antigen with broad
 clinical interest for AML and solid tumors. Same target as the Baker lab paper,
